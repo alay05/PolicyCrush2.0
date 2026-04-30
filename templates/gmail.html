@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Gmail Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+</head>
+<body>
+  <a href="/" class="home-button">← Home</a>
+  <h1>Gmail Newsletters</h1>
+
+  <div style="margin-top: 2rem; text-align: center;">
+    <form method="POST" id="gmail-form" style="display: inline-block;">
+      <button type="submit">Get Unread Messages</button>
+    </form>
+
+    <!-- <a href="{{ url_for('gmail.gmail_logout') }}" style="margin-left: 1rem; display: inline-block;">
+      <button type="button"
+              {% if not token_exists %}disabled style="opacity: 0.5; cursor: not-allowed; background-color: #aaa;"{% else %}style="background-color: #d62828; color: white;"{% endif %}>
+        Logout
+      </button>
+    </a> -->
+  </div>
+
+  <div id="loading-bar-container">
+    <div class="loading-bar"></div>
+  </div>
+
+  {% if error %}
+    <p style="color: red; text-align: center;">{{ error }}</p>
+  {% endif %}
+
+  {% if articles %}
+    {% for subject, data in articles.items() %}
+      <div class="email">
+        <h2>{{ subject }}</h2>
+        <div class="columns" style="justify-content: center;">
+          <div class="column" style="flex: 1 1 90%;">
+            <div class="article">
+              <iframe srcdoc='{{ data.get("html", "") | escape | safe }}'
+                      style="width: 100%; height: 600px; border: none;"></iframe>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  {% elif not error and request.method == 'POST' %}
+    <p style="text-align: center;"><em>No unread emails.</em></p>
+  {% endif %}
+
+  <script>
+    const form = document.getElementById("gmail-form");
+    const loadingBar = document.getElementById("loading-bar-container");
+
+    form.addEventListener("submit", () => {
+      loadingBar.style.display = "block";
+      document.querySelectorAll(".email").forEach(el => el.remove());
+    });
+  </script>
+</body>
+</html>
