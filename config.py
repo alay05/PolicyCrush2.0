@@ -24,6 +24,7 @@ class Config:
     )
 
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+    CONGRESS_API_KEY = os.getenv("CONGRESS_API_KEY", "").strip()
 
     HTTP_TIMEOUT_SECONDS = float(os.getenv("HTTP_TIMEOUT_SECONDS", "30"))
     SCRAPER_BROWSER_PROVIDER = os.getenv("SCRAPER_BROWSER_PROVIDER", "auto").strip().lower()

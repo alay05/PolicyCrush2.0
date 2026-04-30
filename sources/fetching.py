@@ -1,6 +1,7 @@
 from contextlib import suppress
 
 import requests
+from bs4 import BeautifulSoup
 
 from config import Config
 
@@ -38,9 +39,9 @@ def fetch_page_html(url: str, wait_for_selector: str | None = None, timeout_seco
     if provider in {"auto", "requests"}:
         with suppress(Exception):
             html = fetch_html(url, timeout=timeout_seconds)
-            selector_hint = (wait_for_selector or "").replace(".", " ").replace("#", " ")
-            selector_terms = [term for term in selector_hint.split() if term]
-            if not selector_terms or any(term in html for term in selector_terms):
+            if not wait_for_selector:
+                return html
+            if BeautifulSoup(html, "html.parser").select_one(wait_for_selector):
                 return html
             errors.append("requests: expected selector was not present in the HTML response")
 
