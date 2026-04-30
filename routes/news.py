@@ -1,31 +1,10 @@
 from flask import Blueprint, render_template, request
 from datetime import datetime, timedelta
 
-from sources.news.cms_inov import fetch_cms_inov_articles
-from sources.news.cms import fetch_cms_articles
-from sources.news.crs import fetch_crs_articles
-from sources.news.congress import fetch_congress_articles
-from sources.news.fda import fetch_fda_articles
-from sources.news.fed_reg import fetch_federal_register_articles
-from sources.news.hhs import fetch_hhs_articles
-from sources.news.whitehouse import fetch_whitehouse_articles
-from sources.news.omb import fetch_omb_articles
-
 from features.classify import classify
+from sources.catalog import NEWS_SOURCES
 
 news = Blueprint("news", __name__)
-
-NEWS = {
-    "CMS": fetch_cms_articles,
-    "CMS Innovation Center": fetch_cms_inov_articles,
-    "CRS": fetch_crs_articles,
-    "Congress": fetch_congress_articles,
-    "FDA": fetch_fda_articles,
-    "Federal Register Public Inspection Desk": fetch_federal_register_articles,
-    "HHS": fetch_hhs_articles,
-    "OMB First Glance Rulemaking": fetch_omb_articles,
-    "White House": fetch_whitehouse_articles,
-}
 
 @news.route("/news", methods=["GET", "POST"])
 def news_view():
@@ -46,7 +25,7 @@ def news_view():
                 error = "Invalid date."
 
         if not error and start_date:
-            for name, fetch in NEWS.items():
+            for name, fetch in NEWS_SOURCES.items():
                 try:
                     payload = fetch(start_date) 
 

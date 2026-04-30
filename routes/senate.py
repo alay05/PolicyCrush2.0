@@ -1,33 +1,10 @@
 from flask import Blueprint, render_template, request
 from datetime import datetime, timedelta
 
-from sources.senate.aging import fetch_age_articles
-from sources.senate.appropriations import fetch_appr_articles
-from sources.senate.budget import fetch_budg_articles
-from sources.senate.finance import fetch_fin_articles
-from sources.senate.help import fetch_help_articles
-from sources.senate.homeland import fetch_home_articles
-from sources.senate.indian import fetch_ind_articles
-from sources.senate.judiciary import fetch_jud_articles
-from sources.senate.small_business import fetch_smb_articles
-from sources.senate.veterans import fetch_vet_articles
-
 from features.classify import classify
+from sources.catalog import SENATE_SOURCES
 
 senate = Blueprint("senate", __name__)
-
-SENATE = {
-    "Aging": fetch_age_articles,
-    "Appropriations": fetch_appr_articles,
-    "Budget": fetch_budg_articles,
-    "Finance": fetch_fin_articles,
-    "Health, Education, Labor & Pensions (HELP)": fetch_help_articles,
-    "Homeland Security and Governmental Affairs (Oversight)": fetch_home_articles,
-    "Indian Affairs": fetch_ind_articles,
-    "Judiciary": fetch_jud_articles,
-    "Veterans Affairs": fetch_vet_articles,
-    "Small Business": fetch_smb_articles,
-}
 
 @senate.route("/senate", methods=["GET", "POST"])
 def senate_view():
@@ -48,7 +25,7 @@ def senate_view():
                 error = "Invalid date."
 
         if not error and start_date:
-            for name, fetch in SENATE.items():
+            for name, fetch in SENATE_SOURCES.items():
                 try:
                     payload = fetch(start_date)
                     articles = payload["articles"]

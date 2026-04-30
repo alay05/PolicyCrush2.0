@@ -1,73 +1,67 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 from datetime import datetime
+import re
+
+from sources.fetching import fetch_page_html
+
+
+DATE_PATTERN = re.compile(r"\d{2}/\d{2}/\d{4}")
+
 
 def fetch_omb_articles(start_date=None):
-    url = "https://www.reginfo.gov/public/jsp/EO/eoDashboard.myjsp?agency_cd=0900&agency_nm=HHS&stage_cd=4&from_page=index.jsp&sub_index=0"
+    url = "https://www.reginfo.gov/public/do/eoAdvancedSearch"
+    html = fetch_page_html(url, wait_for_selector="a[href*='eoDetails?rrid=']", timeout_seconds=100)
+    soup = BeautifulSoup(html, "html.parser")
+    detail_links = soup.select("a[href*='eoDetails?rrid=']")
+    if not detail_links:
+        raise ValueError("OMB search page did not include any EO detail links")
 
-    options = webdriver.ChromeOptions()
-    options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
+    results = []
+    seen = set()
+    parseable_entries = 0
 
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-
-    try:
-        driver.get(url)
-        WebDriverWait(driver, 100).until(EC.presence_of_element_located((By.CLASS_NAME, "generalTxt")))
-
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        tables = soup.select("table.generalTxt")
-
-        results = []
-
-        for table in tables:
-            agency_text = table.find("b", string="AGENCY:")
-            if not agency_text:
+    for detail_link in detail_links:
+        try:
+            row = detail_link.find_parent("tr")
+            if not row:
                 continue
 
-            agency_cell = agency_text.parent
-            agency_name = agency_cell.get_text(strip=True).replace("AGENCY:", "").strip()
-
-            if not agency_name.startswith("HHS-"):
+            cells = [cell.get_text(" ", strip=True) for cell in row.find_all(["td", "th"])]
+            row_text = " ".join(cells)
+            if "HHS/" not in row_text:
                 continue
 
-            title_tag = table.select_one("span.TCJATitle")
-            rin_tag = table.select_one("td a[href*='eAgendaViewRule']")
-            stage_td = next((td for td in table.find_all("td") if "STAGE:" in td.text), None)
-            date_td = next((td for td in table.find_all("td") if "RECEIVED DATE:" in td.text), None)
-
-            if not title_tag or not rin_tag or not date_td or not stage_td:
+            date_match = DATE_PATTERN.search(row_text)
+            if not date_match:
                 continue
 
-            try:
-                date_str = date_td.text.split("RECEIVED DATE:")[-1].strip()
-                pub_date = datetime.strptime(date_str, "%m/%d/%Y")
-            except ValueError:
-                continue
-
+            pub_date = datetime.strptime(date_match.group(0), "%m/%d/%Y")
+            parseable_entries += 1
             if start_date and pub_date.date() < start_date:
                 continue
 
-            stage = stage_td.text.split("STAGE:")[-1].strip()
-            title = f"{stage} - {title_tag.text.strip()}"
-            article_url = "https://www.reginfo.gov" + rin_tag["href"]
+            detail_href = detail_link.get("href", "").strip()
+            if not detail_href:
+                continue
+            article_url = detail_href if detail_href.startswith("http") else "https://www.reginfo.gov" + detail_href
+
+            title = detail_link.get_text(" ", strip=True)
+            if not title or title in seen:
+                continue
+            seen.add(title)
 
             results.append({
                 "title": title,
                 "url": article_url,
                 "date": pub_date.strftime("%Y-%m-%d")
             })
+        except Exception:
+            continue
 
-        return {
-            "url": url,
-            "articles": results,
-        }
+    if parseable_entries == 0:
+        raise ValueError("OMB search page did not include any parseable HHS rulemaking entries")
 
-    finally:
-        driver.quit()
+    return {
+        "url": url,
+        "articles": results,
+    }

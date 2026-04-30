@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Production - News</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ asset_url('favicon.svg') }}">
 </head>
 <body>
   <a href="/" class="home-button">← Home</a>
@@ -35,7 +35,7 @@
   {% endif %}
 
   <form method="POST" action="{{ url_for('production.production_select_news') }}" style="display:block; margin-top: 0.5rem;">
-    {% if articles %} 
+    {% if articles or failures %} 
       {% for source, data in articles.items() %}
         <div class="source">
           <h2><a href="{{ data['url'] }}" target="_blank">{{ source }}</a></h2>
@@ -56,6 +56,25 @@
           {% endif %}
         </div>
       {% endfor %}
+
+      <div class="source">
+        <h2><a href="https://www.hhs.gov/press-room/index.html" target="_blank">HHS</a></h2>
+        <p><em>HHS is manual only right now because the site is blocking automated requests in this environment.</em></p>
+        <p>Open the press room link above and add any HHS items in the Add Items section below.</p>
+      </div>
+
+      {% if failures %}
+        <div class="source">
+          <h2>Manual Fallback</h2>
+          <p>
+            Some sources could not be loaded in this environment. Use the Add Items section below for:
+            {% for failure in failures %}
+              {% if not loop.first %}, {% endif %}
+              <strong>{{ failure.source }}</strong>
+            {% endfor %}
+          </p>
+        </div>
+      {% endif %}
 
       <div class="manual-section" style="margin-top: 1.25rem;">
         <h3>Add Items</h3>

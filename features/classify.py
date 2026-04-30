@@ -2,10 +2,12 @@ import os
 from openai import OpenAI
 from dotenv import load_dotenv
 
+from config import Config
+
 # Load .env if available
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=api_key)
+client = OpenAI(api_key=api_key) if api_key else None
 
 SYSTEM_MESSAGE = {
     "role": "system",
@@ -19,6 +21,9 @@ SYSTEM_MESSAGE = {
 
 
 def classify(title):
+    if not client:
+        return "ERROR: OPENAI_API_KEY is not set"
+
     prompt = f"""
 You are helping curate a healthcare policy newsletter.
 
@@ -51,7 +56,7 @@ Do not explain your reasoning. Only reply: YES, MAYBE, or NO.
 """
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=Config.OPENAI_MODEL,
             messages=[SYSTEM_MESSAGE, {"role": "user", "content": prompt}],
             temperature=0
         )

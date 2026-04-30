@@ -2,7 +2,6 @@ from flask import Blueprint, render_template, request, session, redirect, url_fo
 from datetime import datetime, timedelta
 import json
 import re
-from weasyprint import HTML
 import hashlib
 from collections import OrderedDict
 
@@ -19,11 +18,6 @@ from features.calendar import (
 )
 
 production = Blueprint("production", __name__, template_folder="templates")
-
-GMAIL_STORE = {}
-NEWS_STORE = {} 
-HOUSE_STORE = {}
-SENATE_STORE = {}
 
 def _ensure_session_bucket():
     if "curation" not in session:
@@ -42,14 +36,60 @@ def _ensure_session_bucket():
         session["categories_cache"] = None
     if "sublinks" not in session:
         session["sublinks"] = {}
+    if "gmail_cache" not in session:
+        session["gmail_cache"] = []
+    if "news_cache" not in session:
+        session["news_cache"] = None
+    if "house_cache" not in session:
+        session["house_cache"] = None
+    if "senate_cache" not in session:
+        session["senate_cache"] = None
 
-def _rehydrate(items, store):
+def _find_cached_item(source: str, item_id: str, cur=None):
+    if source == "gmail":
+        for item in session.get("gmail_cache", []):
+            if item.get("id") == item_id:
+                return item
+        for item in (cur or session.get("curation", {})).get("gmail", []):
+            if item.get("id") == item_id:
+                return item
+        return None
+
+    if source == "news":
+        cache = session.get("news_cache") or {}
+        for meta in (cache.get("sources") or {}).values():
+            for item in meta.get("items", []):
+                if item.get("id") == item_id:
+                    return item
+        return None
+
+    if source == "house":
+        cache = session.get("house_cache") or {}
+        for meta in (cache.get("committees") or {}).values():
+            for side in ("majority", "minority"):
+                for item in meta.get(side, []):
+                    if item.get("id") == item_id:
+                        return item
+        return None
+
+    if source == "senate":
+        cache = session.get("senate_cache") or {}
+        for meta in (cache.get("committees") or {}).values():
+            for tag in ("majority", "minority", "hearing"):
+                for item in meta.get(tag, []):
+                    if item.get("id") == item_id:
+                        return item
+        return None
+
+    return None
+
+def _rehydrate(items, source: str):
     resolved = []
     for a in items or []:
         if a.get("manual"):
-            resolved.append(a)  
+            resolved.append(a)
         else:
-            obj = store.get(a.get("id"))
+            obj = _find_cached_item(source, a.get("id"))
             if obj:
                 resolved.append(obj)
             else:
@@ -58,10 +98,6 @@ def _rehydrate(items, store):
 
 def _reset_all():
     session.clear()
-    GMAIL_STORE.clear()
-    NEWS_STORE.clear()
-    HOUSE_STORE.clear()
-    SENATE_STORE.clear()
 
 def _signature(items):
     """
@@ -83,21 +119,8 @@ def _resolve_ref(ref, cur):
     rid = (ref or {}).get("id")
     src = (ref or {}).get("source")
     if not rid or not src:
-      return None
-
-    if src == "news":
-        return NEWS_STORE.get(rid)
-    if src == "house":
-        return HOUSE_STORE.get(rid)
-    if src == "senate":
-        return SENATE_STORE.get(rid)
-    if src == "gmail":
-        # Gmail items are only manual and live inside session["curation"]["gmail"]
-        for g in (cur.get("gmail") or []):
-            if g.get("id") == rid:
-                return g
         return None
-    return None
+    return _find_cached_item(src, rid, cur=cur)
 
 def _has_time_component(ts: str) -> bool:
     """
@@ -127,8 +150,7 @@ def production_start_action():
 @production.get("/gmail")
 def production_gmail():
     _ensure_session_bucket()
-    ids = session.get("gmail_cache_ids") or []
-    emails = [GMAIL_STORE[i] for i in ids if i in GMAIL_STORE]
+    emails = session.get("gmail_cache") or []
 
     drafts = {}
     if emails:
@@ -162,9 +184,7 @@ def production_select_gmail():
     if action == "load":
         try:
             emails = fetch_gmail_unread()
-            for e in emails:
-                GMAIL_STORE[e["id"]] = e
-            session["gmail_cache_ids"] = [e["id"] for e in emails]
+            session["gmail_cache"] = emails
             # only when reloading Gmail do we invalidate downstream News
             session["news_ready"] = False
             session.modified = True
@@ -250,19 +270,17 @@ def production_select_gmail():
 def production_news():
     _ensure_session_bucket()
     show_results = bool(session.get("news_ready", False))
-    cache = session.get("news_cache")
+    cache = session.get("news_cache") or {}
     articles = None
     input_date = (datetime.today() - timedelta(days=3)).strftime("%Y-%m-%d")
     use_openai = False
+    failures = []
 
     if show_results and cache:
         input_date = cache.get("input_date", input_date)
         use_openai = bool(cache.get("use_openai", False))
-        articles = {}
-        for name, meta in cache.get("sources", {}).items():
-            ids = meta.get("ids", [])
-            items = [NEWS_STORE[i] for i in ids if i in NEWS_STORE]
-            articles[name] = {"url": meta.get("url", ""), "items": items}
+        failures = cache.get("failures", [])
+        articles = cache.get("sources", {})
 
     prechecked = {a["id"] for a in session["curation"].get("news", []) if not a.get("manual")}
     manual_rows = session.get("news_manual_drafts") or [{}]
@@ -275,6 +293,7 @@ def production_news():
         error=None,
         action_was_load=bool(articles),
         manual_rows=manual_rows,
+        failures=failures,
     )
 
 
@@ -305,32 +324,28 @@ def production_select_news():
                 manual_rows=session.get("news_manual_drafts") or [{}],
             )
 
-        bundle = fetch_news_bundle(start_date, use_openai)
-        sources = {}
-        for name, meta in bundle.items():
-            ids = []
-            for item in meta["items"]:
-                NEWS_STORE[item["id"]] = item
-                ids.append(item["id"])
-            sources[name] = {"url": meta["url"], "ids": ids}
-
-        session["news_cache"] = {"sources": sources, "input_date": input_date, "use_openai": use_openai}
+        bundle, failures = fetch_news_bundle(start_date, use_openai)
+        session["news_cache"] = {
+            "sources": bundle,
+            "input_date": input_date,
+            "use_openai": use_openai,
+            "failures": failures,
+        }
         session["news_ready"] = True
         session.modified = True
 
-        articles = {name: {"url": m["url"], "items": [NEWS_STORE[i] for i in m["ids"] if i in NEWS_STORE]}
-                    for name, m in sources.items()}
         prechecked = {a["id"] for a in session["curation"].get("news", []) if not a.get("manual")}
         manual_rows = session.get("news_manual_drafts") or [{}]
         return render_template(
             "production_news.html",
-            articles=articles,
+            articles=bundle,
             prechecked=prechecked,
             input_date=input_date,
             use_openai=use_openai,
             error=None,
             action_was_load=True,
             manual_rows=manual_rows,
+            failures=failures,
         )
 
     titles = request.form.getlist("news_manual_title[]")
@@ -376,7 +391,7 @@ def production_select_news():
 def production_house():
     _ensure_session_bucket()
     show_results = bool(session.get("house_ready", False))
-    cache = session.get("house_cache")
+    cache = session.get("house_cache") or {}
     committees = None
     input_date = (datetime.today() - timedelta(days=3)).strftime("%Y-%m-%d")
     use_openai = False
@@ -384,19 +399,7 @@ def production_house():
     if show_results and cache and cache.get("committees"):
         use_openai = bool(cache.get("use_openai", False))
         input_date = cache.get("input_date", input_date)
-
-        built = {}
-        any_items = False
-        for name, meta in cache["committees"].items():
-            maj_ids = meta.get("majority", [])
-            min_ids = meta.get("minority", [])
-            maj = [HOUSE_STORE[i] for i in maj_ids if i in HOUSE_STORE]
-            mino = [HOUSE_STORE[i] for i in min_ids if i in HOUSE_STORE]
-            if maj or mino:
-                any_items = True
-            built[name] = {"majority": maj, "minority": mino}
-
-        committees = built if any_items else None
+        committees = cache.get("committees")
 
     prechecked = {a["id"] for a in session["curation"].get("house", []) if not a.get("manual")}
     manual_rows = session.get("house_manual_drafts") or [{}]
@@ -441,35 +444,17 @@ def production_select_house():
 
         bundle = fetch_house_bundle(start_date, use_openai)
 
-        committees_meta = {}
-        for name, groups in bundle.items():
-            maj_ids, min_ids = [], []
-            for item in groups["majority"]:
-                HOUSE_STORE[item["id"]] = item
-                maj_ids.append(item["id"])
-            for item in groups["minority"]:
-                HOUSE_STORE[item["id"]] = item
-                min_ids.append(item["id"])
-            committees_meta[name] = {"majority": maj_ids, "minority": min_ids}
-
-        session["house_cache"] = {"committees": committees_meta, "input_date": input_date, "use_openai": use_openai}
+        session["house_cache"] = {"committees": bundle, "input_date": input_date, "use_openai": use_openai}
         session["house_ready"] = True
         # only when House is reloaded do we invalidate downstream Senate
         session["senate_ready"] = False
         session.modified = True
 
-        committees = {}
-        for name, meta in committees_meta.items():
-            committees[name] = {
-                "majority": [HOUSE_STORE[i] for i in meta["majority"] if i in HOUSE_STORE],
-                "minority": [HOUSE_STORE[i] for i in meta["minority"] if i in HOUSE_STORE],
-            }
-
         prechecked = {a["id"] for a in session["curation"].get("house", []) if not a.get("manual")}
         manual_rows = session.get("house_manual_drafts") or [{}]
         return render_template(
             "production_house.html",
-            committees=committees,
+            committees=bundle,
             prechecked=prechecked,
             input_date=input_date,
             use_openai=use_openai,
@@ -522,7 +507,7 @@ def production_select_house():
 def production_senate():
     _ensure_session_bucket()
     show_results = bool(session.get("senate_ready", False))
-    cache = session.get("senate_cache")
+    cache = session.get("senate_cache") or {}
     committees = None
     input_date = (datetime.today() - timedelta(days=3)).strftime("%Y-%m-%d")
     use_openai = False
@@ -530,20 +515,7 @@ def production_senate():
     if show_results and cache and cache.get("committees"):
         input_date = cache.get("input_date", input_date)
         use_openai = bool(cache.get("use_openai", False))
-        built = {}
-        any_items = False
-        for name, meta in cache["committees"].items():
-            maj_ids = meta.get("majority", [])
-            min_ids = meta.get("minority", [])
-            hear_ids = meta.get("hearing", [])
-            url = meta.get("url", "")
-            maj = [SENATE_STORE[i] for i in maj_ids if i in SENATE_STORE]
-            mino = [SENATE_STORE[i] for i in min_ids if i in SENATE_STORE]
-            hear = [SENATE_STORE[i] for i in hear_ids if i in SENATE_STORE]
-            if maj or mino or hear:
-                any_items = True
-            built[name] = {"url": url, "majority": maj, "minority": mino, "hearing": hear}
-        committees = built if any_items else None
+        committees = cache.get("committees")
 
     prechecked = {a["id"] for a in session["curation"].get("senate", []) if not a.get("manual")}
     manual_rows = session.get("senate_manual_drafts") or [{}]
@@ -588,44 +560,15 @@ def production_select_senate():
 
         bundle = fetch_senate_bundle(start_date, use_openai)
 
-        committees_meta = {}
-        for name, groups in bundle.items():
-            url = groups.get("url", "")
-            maj_ids, min_ids, hear_ids = [], [], []
-            for item in groups.get("majority", []):
-                item["tag"] = "majority"
-                SENATE_STORE[item["id"]] = item
-                maj_ids.append(item["id"])
-
-            for item in groups.get("minority", []):
-                item["tag"] = "minority"
-                SENATE_STORE[item["id"]] = item
-                min_ids.append(item["id"])
-
-            for item in groups.get("hearing", []):
-                item["tag"] = "hearing"
-                SENATE_STORE[item["id"]] = item
-                hear_ids.append(item["id"])
-            committees_meta[name] = {"url": url, "majority": maj_ids, "minority": min_ids, "hearing": hear_ids}
-
-        session["senate_cache"] = {"committees": committees_meta, "input_date": input_date, "use_openai": use_openai}
+        session["senate_cache"] = {"committees": bundle, "input_date": input_date, "use_openai": use_openai}
         session["senate_ready"] = True
         session.modified = True
-
-        committees = {}
-        for name, meta in committees_meta.items():
-            committees[name] = {
-                "url": meta.get("url", ""),
-                "majority": [SENATE_STORE[i] for i in meta["majority"] if i in SENATE_STORE],
-                "minority": [SENATE_STORE[i] for i in meta["minority"] if i in SENATE_STORE],
-                "hearing":  [SENATE_STORE[i] for i in meta["hearing"] if i in SENATE_STORE],
-            }
 
         prechecked = {a["id"] for a in session["curation"].get("senate", []) if not a.get("manual")}
         manual_rows = session.get("senate_manual_drafts") or [{}]
         return render_template(
             "production_senate.html",
-            committees=committees,
+            committees=bundle,
             prechecked=prechecked,
             input_date=input_date,
             use_openai=use_openai,
@@ -685,9 +628,9 @@ def production_categorize():
     resp = make_response(render_template(
         "production_categorize.html",
         gmail_items=cur.get("gmail", []),
-        news_items=_rehydrate(cur.get("news"), NEWS_STORE),
-        house_items=_rehydrate(cur.get("house"), HOUSE_STORE),
-        senate_items=_rehydrate(cur.get("senate"), SENATE_STORE),
+        news_items=_rehydrate(cur.get("news"), "news"),
+        house_items=_rehydrate(cur.get("house"), "house"),
+        senate_items=_rehydrate(cur.get("senate"), "senate"),
         categorize_ready=bool(session.get("categorize_ready", False)),
     ))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -702,9 +645,9 @@ def production_build_categories():
     cur = session.get("curation", {})
 
     gmail_items  = cur.get("gmail", [])
-    news_items   = _rehydrate(cur.get("news"), NEWS_STORE)
-    house_items  = _rehydrate(cur.get("house"), HOUSE_STORE)
-    senate_items = _rehydrate(cur.get("senate"), SENATE_STORE)
+    news_items   = _rehydrate(cur.get("news"), "news")
+    house_items  = _rehydrate(cur.get("house"), "house")
+    senate_items = _rehydrate(cur.get("senate"), "senate")
 
     all_items = []
     def add(src, arr):
@@ -840,16 +783,20 @@ def production_move_article():
     # Ensure destination exists
     dest_list = index.setdefault(to_cat, [])
 
-    # 1) Find which string we’re storing in `index` for this article.
-    #    Your index stores "refs" (keys used by _resolve_ref). Sometimes `id == ref`,
-    #    but to be safe, try to locate by either:
+    src_token, _, rid_token = art_id.partition(":")
+
+    def _matches_ref(ref):
+        if str(ref) == str(art_id):
+            return True
+        if isinstance(ref, dict):
+            return ref.get("source") == src_token and ref.get("id") == rid_token
+        return False
+
     def _remove_first_match():
-        # try exact matches (id == ref)
         for cat, lst in index.items():
             for i, ref in enumerate(lst or []):
-                if str(ref) == str(art_id):
+                if _matches_ref(ref):
                     return cat, lst.pop(i), i
-        # if your hydrated items use a separate key, add a resolver here
         return None, None, None
 
     # Remove from source (if provided), else search globally
@@ -857,7 +804,7 @@ def production_move_article():
     if from_cat in index:
         lst = index[from_cat] or []
         for i, ref in enumerate(lst):
-            if str(ref) == str(art_id):
+            if _matches_ref(ref):
                 removed_from, ref_value, old_pos = from_cat, lst.pop(i), i
                 break
     if ref_value is None:
@@ -941,6 +888,14 @@ def production_export_categories_pdf():
         generated_at=datetime.now(),
         categories=ordered,   # pass ordered mapping to the template
     )
+
+    try:
+        from weasyprint import HTML
+    except Exception as exc:
+        return make_response(
+            f"PDF export is unavailable in this deployment environment: {exc}",
+            503,
+        )
 
     pdf_bytes = HTML(string=html, base_url=request.root_url).write_pdf()
     stamp = datetime.now().strftime("%m/%d")

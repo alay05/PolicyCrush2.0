@@ -1,66 +1,95 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 from datetime import datetime
+import re
 
-def fetch_hhs_articles(start_date=None):
-    options = webdriver.ChromeOptions()
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
+from sources.fetching import fetch_html, fetch_page_html, ScraperUnavailableError
 
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-     
-    try:
-        url = "https://www.hhs.gov/press-room/index.html"
-        driver.get(url)
 
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "ul.usa-collection"))
-        )
+DATE_PATTERN = re.compile(r"([A-Z][a-z]+ \d{1,2}, \d{4})\s+Press Release")
+BLOCK_PATTERNS = ("Access Denied", "Request unsuccessful", "temporarily unavailable")
+HHS_URLS = [
+    "https://www.hhs.gov/news",
+    "https://www.hhs.gov/press-room/index.html",
+    "https://www.hhs.gov/about/news/index.html?p=0",
+]
 
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        
-        items = soup.select("li.usa-collection__item")
-        
-        results = []
 
-        for i, item in enumerate(items):
-            try:
-                link_tag = item.select_one("a.usa-link")
-                time_tag = item.select_one("time")
+def _looks_blocked(html: str) -> bool:
+    lowered = html.lower()
+    return any(pattern.lower() in lowered for pattern in BLOCK_PATTERNS)
 
-                if not link_tag or not time_tag:
-                    continue
 
-                title = link_tag.text.strip()
-                href = link_tag["href"]
-                full_url = href if href.startswith("http") else "https://www.hhs.gov" + href
+def _parse_hhs_page(html: str, page_url: str, start_date=None):
+    soup = BeautifulSoup(html, "html.parser")
+    main = soup.find("main") or soup
 
-                date_str = time_tag["datetime"]  # e.g. "2025-07-17T16:15:00-0400"
-                pub_date = datetime.fromisoformat(date_str.split("T")[0])
+    results = []
+    seen = set()
 
-                if start_date and pub_date.date() < start_date:
-                    continue
-
-                results.append({
-                    "title": title,
-                    "url": full_url,
-                    "date": pub_date.strftime("%Y-%m-%d")
-                })
-
-            except Exception as e:
+    for item in main.select("li, article, div"):
+        try:
+            text_blob = item.get_text(" ", strip=True)
+            if "Press Release" not in text_blob:
                 continue
 
-        return {
-            "url": url,
-            "articles": results,
-        }
+            date_match = DATE_PATTERN.search(text_blob)
+            if not date_match:
+                continue
 
-    finally:
-        driver.quit()
+            link_tag = item.select_one("a[href]")
+            if not link_tag:
+                continue
+
+            href = (link_tag.get("href") or "").strip()
+            title = link_tag.get_text(" ", strip=True)
+            if not href or not title:
+                continue
+
+            if href.startswith("#") or "/archive" in href or "pagefreezer" in href or "archive-it" in href:
+                continue
+
+            pub_date = datetime.strptime(date_match.group(1), "%B %d, %Y")
+            if start_date and pub_date.date() < start_date:
+                continue
+
+            full_url = href if href.startswith("http") else "https://www.hhs.gov" + href
+            key = (title, full_url)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            results.append({
+                "title": title,
+                "url": full_url,
+                "date": pub_date.strftime("%Y-%m-%d"),
+            })
+        except Exception:
+            continue
+
+    return {
+        "url": page_url,
+        "articles": results,
+    }
+
+
+def fetch_hhs_articles(start_date=None):
+    errors = []
+
+    for url in HHS_URLS:
+        try:
+            try:
+                html = fetch_html(url)
+                if _looks_blocked(html):
+                    raise ValueError("blocked response")
+            except Exception:
+                html = fetch_page_html(url, wait_for_selector="h1", timeout_seconds=20)
+                if _looks_blocked(html):
+                    raise ValueError("blocked response")
+
+            parsed = _parse_hhs_page(html, url, start_date=start_date)
+            return parsed
+        except (ScraperUnavailableError, ValueError) as exc:
+            errors.append(f"{url}: {exc}")
+            continue
+
+    raise ScraperUnavailableError(" ; ".join(errors) or "No accessible HHS news page found")

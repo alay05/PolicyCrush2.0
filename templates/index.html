@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>PolicyCrush Production</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ asset_url('favicon.svg') }}">
 </head>
 <body class="page-wrapper">
   <div class="content">
@@ -33,7 +33,7 @@
   
   <footer class="footer animate-in" style="animation-delay: 1.25s;">
     <a href="https://www.chamberhill.com" target="_blank">
-      <img src="{{ url_for('static', filename='logo.png') }}" alt="Chamber Hill Logo">
+      <img src="{{ asset_url('logo.png') }}" alt="Chamber Hill Logo">
     </a>
   </footer>
 </body>
