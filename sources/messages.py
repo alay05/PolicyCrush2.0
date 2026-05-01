@@ -90,7 +90,6 @@ def _load_blob_credentials_payload() -> dict | None:
 
         result = blob_get(_gmail_blob_path(sid), access="private", token=os.getenv("BLOB_READ_WRITE_TOKEN"))
         if not result:
-            print("gmail blob load: missing result", {"sid": sid})
             return None
 
         raw = None
@@ -101,14 +100,6 @@ def _load_blob_credentials_payload() -> dict | None:
                 getattr(result, "url", None)
                 or getattr(result, "download_url", None)
                 or getattr(result, "downloadUrl", None)
-            )
-            print(
-                "gmail blob load: missing stream",
-                {
-                    "sid": sid,
-                    "has_result": True,
-                    "download_url_present": bool(download_url),
-                },
             )
             if not download_url:
                 return None
@@ -123,21 +114,11 @@ def _load_blob_credentials_payload() -> dict | None:
             raw = response.content
 
         payload = json.loads(raw.decode("utf-8"))
-        print(
-            "gmail blob load",
-            {
-                "sid": sid,
-                "raw_len": len(raw),
-                "payload_type": type(payload).__name__,
-                "payload_keys": list(payload.keys())[:10] if isinstance(payload, dict) else None,
-            },
-        )
         if isinstance(payload, dict) and "data" in payload:
             return payload.get("data") or {}
         if isinstance(payload, dict):
             return payload
-    except Exception as exc:
-        print("gmail blob load error", {"sid": sid, "error": str(exc)})
+    except Exception:
         return None
     return None
 
@@ -157,15 +138,6 @@ def _persist_blob_credentials(payload: dict):
             content_type="application/json",
             overwrite=True,
             token=os.getenv("BLOB_READ_WRITE_TOKEN"),
-        )
-        print(
-            "gmail blob save",
-            {
-                "sid": sid,
-                "payload_keys": list(payload.keys())[:10],
-                "has_token": bool(payload.get("token")),
-                "has_refresh_token": bool(payload.get("refresh_token")),
-            },
         )
         response.set_cookie(
             GMAIL_AUTH_COOKIE,
@@ -260,16 +232,6 @@ def is_authenticated() -> bool:
     if has_request_context():
         payload = _load_blob_credentials_payload() if _use_blob_auth() else session.get(SESSION_KEY)
         creds = _deserialize_credentials(payload)
-        print(
-            "gmail is_authenticated",
-            {
-                "has_payload": bool(payload),
-                "has_token": bool(getattr(creds, "token", None)) if creds else False,
-                "has_refresh_token": bool(getattr(creds, "refresh_token", None)) if creds else False,
-                "expiry": str(getattr(creds, "expiry", None)) if creds else None,
-                "valid": bool(getattr(creds, "valid", False)) if creds else False,
-            },
-        )
         return bool(creds and (creds.valid or creds.refresh_token))
     return os.path.exists("token.pickle")
 
@@ -316,15 +278,6 @@ def finish_auth_flow(authorization_response: str, redirect_uri: str):
     flow = Flow.from_client_config(config, SCOPES, state=state)
     flow.redirect_uri = redirect_uri
     flow.fetch_token(authorization_response=authorization_response)
-    print(
-        "gmail callback credentials",
-        {
-            "has_token": bool(flow.credentials.token),
-            "has_refresh_token": bool(flow.credentials.refresh_token),
-            "expiry": str(flow.credentials.expiry),
-            "scopes": list(flow.credentials.scopes or []),
-        },
-    )
 
     payload = _serialize_credentials(flow.credentials)
     if _use_blob_auth():
@@ -359,16 +312,6 @@ def authenticate():
 
     payload = _load_blob_credentials_payload() if _use_blob_auth() else session.get(SESSION_KEY)
     creds = _deserialize_credentials(payload)
-    print(
-        "gmail authenticate",
-        {
-            "has_payload": bool(payload),
-            "has_token": bool(getattr(creds, "token", None)) if creds else False,
-            "has_refresh_token": bool(getattr(creds, "refresh_token", None)) if creds else False,
-            "expiry": str(getattr(creds, "expiry", None)) if creds else None,
-            "valid": bool(getattr(creds, "valid", False)) if creds else False,
-        },
-    )
     if not creds:
         raise GmailAuthRequired("/gmail/oauth/start")
 
