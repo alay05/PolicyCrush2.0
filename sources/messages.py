@@ -88,11 +88,33 @@ def _load_blob_credentials_payload() -> dict | None:
     from vercel.blob import get as blob_get
 
     result = blob_get(_gmail_blob_path(sid), access="private", token=os.getenv("BLOB_READ_WRITE_TOKEN"))
-    if not result or not getattr(result, "stream", None):
-        print("gmail blob load: missing stream", {"sid": sid, "has_result": bool(result)})
+    if not result:
+        print("gmail blob load: missing result", {"sid": sid})
         return None
 
-    raw = _read_stream(result.stream)
+    raw = None
+    if getattr(result, "stream", None):
+        raw = _read_stream(result.stream)
+    else:
+        download_url = (
+            getattr(result, "url", None)
+            or getattr(result, "download_url", None)
+            or getattr(result, "downloadUrl", None)
+        )
+        print(
+            "gmail blob load: missing stream",
+            {
+                "sid": sid,
+                "has_result": True,
+                "download_url_present": bool(download_url),
+            },
+        )
+        if not download_url:
+            return None
+        response = __import__("requests").get(download_url, timeout=20)
+        response.raise_for_status()
+        raw = response.content
+
     payload = json.loads(raw.decode("utf-8"))
     print(
         "gmail blob load",
