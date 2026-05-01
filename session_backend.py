@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask.sessions import SessionInterface, SessionMixin
 from itsdangerous import BadSignature, Signer
+import requests
 from werkzeug.datastructures import CallbackDict
 
 
@@ -70,10 +71,28 @@ class VercelBlobSessionInterface(SessionInterface):
 
     def _load_blob_payload(self, sid: str) -> dict | None:
         result = self._blob_get(self._blob_path(sid), access="private", token=self.token)
-        if not result or not getattr(result, "stream", None):
+        if not result:
             return None
 
-        raw = self._read_stream(result.stream)
+        if getattr(result, "stream", None):
+            raw = self._read_stream(result.stream)
+        else:
+            download_url = (
+                getattr(result, "url", None)
+                or getattr(result, "download_url", None)
+                or getattr(result, "downloadUrl", None)
+            )
+            if not download_url:
+                return None
+
+            response = requests.get(
+                download_url,
+                headers={"Authorization": f"Bearer {self.token}"},
+                timeout=20,
+            )
+            response.raise_for_status()
+            raw = response.content
+
         payload = json.loads(raw.decode("utf-8"))
         expires_at = payload.get("expires_at")
         if expires_at:
