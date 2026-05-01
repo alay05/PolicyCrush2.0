@@ -3,7 +3,9 @@ from datetime import datetime, timedelta
 import json
 import re
 import hashlib
+from io import BytesIO
 from collections import OrderedDict
+from xml.sax.saxutils import escape
 
 from production.adapters import fetch_gmail_unread
 from production.adapters import fetch_news_bundle
@@ -11,6 +13,7 @@ from production.adapters import fetch_house_bundle
 from production.adapters import fetch_senate_bundle
 from sources.messages import GmailAuthRequired, is_authenticated
 from features.categorize import categorize_article, SPECIAL_CALENDAR, CATEGORIES
+from features.pretty_date import pretty_date
 
 from features.calendar import (
     fetch_hearing_html,
@@ -934,21 +937,130 @@ def production_export_categories_pdf():
         if lab not in ordered:
             ordered[lab] = items
 
-    html = render_template(
-        "pdf.html",
-        generated_at=datetime.now(),
-        categories=ordered,   # pass ordered mapping to the template
-    )
-
     try:
-        from weasyprint import HTML
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import inch
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
     except Exception as exc:
         return make_response(
             f"PDF export is unavailable in this deployment environment: {exc}",
             503,
         )
 
-    pdf_bytes = HTML(string=html, base_url=request.root_url).write_pdf()
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        leftMargin=0.65 * inch,
+        rightMargin=0.65 * inch,
+        topMargin=0.7 * inch,
+        bottomMargin=0.7 * inch,
+        title="PolicyCrush Categories",
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = styles["Title"]
+    title_style.fontName = "Helvetica-Bold"
+    title_style.fontSize = 20
+    title_style.leading = 24
+
+    heading_style = styles["Heading2"]
+    heading_style.fontName = "Helvetica-Bold"
+    heading_style.fontSize = 14
+    heading_style.leading = 18
+    heading_style.spaceBefore = 12
+    heading_style.spaceAfter = 6
+    heading_style.textColor = colors.HexColor("#111827")
+
+    body_style = ParagraphStyle(
+        "PolicyCrushBody",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=10,
+        leading=13,
+        textColor=colors.HexColor("#111827"),
+        spaceAfter=2,
+    )
+    link_style = ParagraphStyle(
+        "PolicyCrushLink",
+        parent=body_style,
+        textColor=colors.HexColor("#1d4ed8"),
+    )
+    date_style = ParagraphStyle(
+        "PolicyCrushDate",
+        parent=body_style,
+        fontName="Helvetica-Bold",
+        textColor=colors.HexColor("#111827"),
+    )
+
+    story = [
+        Paragraph("Newsletter Categories", title_style),
+        Spacer(1, 0.15 * inch),
+    ]
+
+    for label, items in ordered.items():
+        if not items:
+            continue
+
+        story.append(Paragraph(escape(label), heading_style))
+        rows = [[
+            Paragraph("Date", date_style),
+            Paragraph("Title", date_style),
+        ]]
+
+        for item in items:
+            is_hearing = "T" in (item.get("date") or "")
+            date_text = escape(pretty_date(item.get("date"), is_hearing))
+
+            title_html = escape(item.get("title") or "")
+            url = (item.get("url") or "").strip()
+            if url:
+                title_html = f'<link href="{escape(url)}" color="blue">{title_html}</link><br/><font size="8" color="#6b7280">{escape(url)}</font>'
+
+            sublinks = item.get("sublinks") or []
+            if sublinks:
+                for sl in sublinks:
+                    heading = escape((sl or {}).get("heading") or "Link")
+                    sl_url = escape((sl or {}).get("url") or "")
+                    if sl_url:
+                        title_html += (
+                            f'<br/><font size="9"><b>{heading}:</b> '
+                            f'<link href="{sl_url}" color="blue">{sl_url}</link></font>'
+                        )
+
+            rows.append([
+                Paragraph(date_text, body_style),
+                Paragraph(title_html or "&mdash;", link_style),
+            ])
+
+        table = Table(rows, colWidths=[1.55 * inch, 5.75 * inch], repeatRows=1)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.white),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#6b7280")),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+            ("LINEBELOW", (0, 0), (-1, 0), 0.5, colors.HexColor("#e5e7eb")),
+            ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#f9fafb")),
+            ("BOX", (0, 1), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+            ("INNERGRID", (0, 1), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 1), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 1), (-1, -1), 7),
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 0.14 * inch))
+
+    story.append(Spacer(1, 0.12 * inch))
+    story.append(Paragraph(f"Generated {escape(datetime.now().strftime('%Y-%m-%d %H:%M'))}", body_style))
+
+    doc.build(story)
+    pdf_bytes = buffer.getvalue()
+
     stamp = datetime.now().strftime("%m/%d")
     resp = make_response(pdf_bytes)
     resp.headers["Content-Type"] = "application/pdf"
