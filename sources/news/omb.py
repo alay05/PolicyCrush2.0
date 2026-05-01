@@ -26,12 +26,15 @@ def fetch_omb_articles(start_date=None):
             if not row:
                 continue
 
-            cells = [cell.get_text(" ", strip=True) for cell in row.find_all(["td", "th"])]
+            cells = [cell.get_text(" ", strip=True) for cell in row.find_all("td")]
+            if len(cells) < 5:
+                continue
+
             row_text = " ".join(cells)
             if "HHS/" not in row_text:
                 continue
 
-            date_match = DATE_PATTERN.search(row_text)
+            date_match = DATE_PATTERN.search(cells[0])
             if not date_match:
                 continue
 
@@ -45,7 +48,7 @@ def fetch_omb_articles(start_date=None):
                 continue
             article_url = detail_href if detail_href.startswith("http") else "https://www.reginfo.gov" + detail_href
 
-            title = detail_link.get_text(" ", strip=True)
+            title = cells[3].strip()
             if not title or title in seen:
                 continue
             seen.add(title)
