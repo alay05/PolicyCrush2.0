@@ -89,10 +89,25 @@ def _load_blob_credentials_payload() -> dict | None:
 
     result = blob_get(_gmail_blob_path(sid), access="private", token=os.getenv("BLOB_READ_WRITE_TOKEN"))
     if not result or not getattr(result, "stream", None):
+        print("gmail blob load: missing stream", {"sid": sid, "has_result": bool(result)})
         return None
 
     raw = _read_stream(result.stream)
-    return json.loads(raw.decode("utf-8"))
+    payload = json.loads(raw.decode("utf-8"))
+    print(
+        "gmail blob load",
+        {
+            "sid": sid,
+            "raw_len": len(raw),
+            "payload_type": type(payload).__name__,
+            "payload_keys": list(payload.keys())[:10] if isinstance(payload, dict) else None,
+        },
+    )
+    if isinstance(payload, dict) and "data" in payload:
+        return payload.get("data") or {}
+    if isinstance(payload, dict):
+        return payload
+    return None
 
 
 def _persist_blob_credentials(payload: dict):
@@ -102,13 +117,23 @@ def _persist_blob_credentials(payload: dict):
     def _save(response):
         from vercel.blob import put as blob_put
 
+        wrapped_payload = {"data": payload}
         blob_put(
             _gmail_blob_path(sid),
-            json.dumps(payload).encode("utf-8"),
+            json.dumps(wrapped_payload).encode("utf-8"),
             access="private",
             content_type="application/json",
             overwrite=True,
             token=os.getenv("BLOB_READ_WRITE_TOKEN"),
+        )
+        print(
+            "gmail blob save",
+            {
+                "sid": sid,
+                "payload_keys": list(payload.keys())[:10],
+                "has_token": bool(payload.get("token")),
+                "has_refresh_token": bool(payload.get("refresh_token")),
+            },
         )
         response.set_cookie(
             GMAIL_AUTH_COOKIE,
