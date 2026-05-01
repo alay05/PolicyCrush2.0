@@ -149,13 +149,16 @@ class VercelBlobSessionInterface(SessionInterface):
 
         expires = self.get_expiration_time(app, session)
         expiry_marker = self._session_expiry(app, session)
+        previous_sid = getattr(session, "sid", None)
+        next_sid = secrets.token_urlsafe(32)
+        session.sid = next_sid
 
         payload = {
             "expires_at": expiry_marker.isoformat(),
             "data": dict(session),
         }
         self._blob_put(
-            self._blob_path(session.sid),
+            self._blob_path(next_sid),
             json.dumps(payload).encode("utf-8"),
             access="private",
             content_type="application/json",
@@ -165,7 +168,7 @@ class VercelBlobSessionInterface(SessionInterface):
 
         response.set_cookie(
             cookie_name,
-            self._sign_sid(session.sid),
+            self._sign_sid(next_sid),
             expires=expires,
             httponly=self.get_cookie_httponly(app),
             secure=self.get_cookie_secure(app),
@@ -173,6 +176,12 @@ class VercelBlobSessionInterface(SessionInterface):
             path=self.get_cookie_path(app),
             domain=self.get_cookie_domain(app),
         )
+
+        if previous_sid and previous_sid != next_sid:
+            try:
+                self._blob_delete(self._blob_path(previous_sid), token=self.token)
+            except Exception:
+                pass
 
 
 def configure_session(app):
