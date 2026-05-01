@@ -203,6 +203,16 @@ def is_authenticated() -> bool:
     if has_request_context():
         payload = _load_blob_credentials_payload() if _use_blob_auth() else session.get(SESSION_KEY)
         creds = _deserialize_credentials(payload)
+        print(
+            "gmail is_authenticated",
+            {
+                "has_payload": bool(payload),
+                "has_token": bool(getattr(creds, "token", None)) if creds else False,
+                "has_refresh_token": bool(getattr(creds, "refresh_token", None)) if creds else False,
+                "expiry": str(getattr(creds, "expiry", None)) if creds else None,
+                "valid": bool(getattr(creds, "valid", False)) if creds else False,
+            },
+        )
         return bool(creds and (creds.valid or creds.refresh_token))
     return os.path.exists("token.pickle")
 
@@ -249,6 +259,15 @@ def finish_auth_flow(authorization_response: str, redirect_uri: str):
     flow = Flow.from_client_config(config, SCOPES, state=state)
     flow.redirect_uri = redirect_uri
     flow.fetch_token(authorization_response=authorization_response)
+    print(
+        "gmail callback credentials",
+        {
+            "has_token": bool(flow.credentials.token),
+            "has_refresh_token": bool(flow.credentials.refresh_token),
+            "expiry": str(flow.credentials.expiry),
+            "scopes": list(flow.credentials.scopes or []),
+        },
+    )
 
     payload = _serialize_credentials(flow.credentials)
     if _use_blob_auth():
@@ -283,6 +302,16 @@ def authenticate():
 
     payload = _load_blob_credentials_payload() if _use_blob_auth() else session.get(SESSION_KEY)
     creds = _deserialize_credentials(payload)
+    print(
+        "gmail authenticate",
+        {
+            "has_payload": bool(payload),
+            "has_token": bool(getattr(creds, "token", None)) if creds else False,
+            "has_refresh_token": bool(getattr(creds, "refresh_token", None)) if creds else False,
+            "expiry": str(getattr(creds, "expiry", None)) if creds else None,
+            "valid": bool(getattr(creds, "valid", False)) if creds else False,
+        },
+    )
     if not creds:
         raise GmailAuthRequired("/gmail/oauth/start")
 
