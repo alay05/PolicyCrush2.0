@@ -69,31 +69,49 @@ class VercelBlobSessionInterface(SessionInterface):
             return asyncio.run(self._consume_async_stream(stream))
         return b"".join(stream)
 
+    def _download_blob_bytes(self, url: str) -> bytes:
+        response = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {self.token}"},
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response.content
+
     def _load_blob_payload(self, sid: str) -> dict | None:
         result = self._blob_get(self._blob_path(sid), access="private", token=self.token)
         if not result:
             return None
 
+        initial_download_url = None
         if getattr(result, "stream", None):
             raw = self._read_stream(result.stream)
         else:
-            download_url = (
-                getattr(result, "url", None)
-                or getattr(result, "download_url", None)
+            initial_download_url = (
+                getattr(result, "download_url", None)
                 or getattr(result, "downloadUrl", None)
+                or getattr(result, "url", None)
             )
-            if not download_url:
+            if not initial_download_url:
                 return None
 
-            response = requests.get(
-                download_url,
-                headers={"Authorization": f"Bearer {self.token}"},
-                timeout=20,
-            )
-            response.raise_for_status()
-            raw = response.content
+            raw = self._download_blob_bytes(initial_download_url)
 
         payload = json.loads(raw.decode("utf-8"))
+
+        # Some Vercel Blob responses return metadata first; refetch the actual
+        # object body from the embedded download URL instead of treating that
+        # metadata as an empty session.
+        if isinstance(payload, dict) and "data" not in payload:
+            nested_download_url = (
+                payload.get("download_url")
+                or payload.get("downloadUrl")
+                or payload.get("url")
+            )
+            if nested_download_url and nested_download_url != initial_download_url:
+                raw = self._download_blob_bytes(nested_download_url)
+                payload = json.loads(raw.decode("utf-8"))
+
         expires_at = payload.get("expires_at")
         if expires_at:
             expires = datetime.fromisoformat(expires_at)
