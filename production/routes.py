@@ -518,6 +518,14 @@ def production_select_house():
         _selected_items_from_cache("house", selected_ids)
         + manuals
     )
+    print(
+        "production house selection",
+        {
+            "selected_ids": len(selected_ids),
+            "resolved": len(session["curation"]["house"]),
+            "manuals": len(manuals),
+        },
+    )
     session.modified = True
 
     session["categorize_ready"] = False
@@ -631,6 +639,14 @@ def production_select_senate():
         _selected_items_from_cache("senate", selected_ids)
         + manuals
     )
+    print(
+        "production senate selection",
+        {
+            "selected_ids": len(selected_ids),
+            "resolved": len(session["curation"]["senate"]),
+            "manuals": len(manuals),
+        },
+    )
     session.modified = True
 
     session["categorize_ready"] = False
@@ -650,6 +666,15 @@ def production_categorize():
     """
     _ensure_session_bucket()
     cur = session.get("curation", {})
+    print(
+        "production categorize counts",
+        {
+            "gmail": len(cur.get("gmail", [])),
+            "news": len(cur.get("news", [])),
+            "house": len(cur.get("house", [])),
+            "senate": len(cur.get("senate", [])),
+        },
+    )
     # hydrate selected ids into full objects
     resp = make_response(render_template(
         "production_categorize.html",
