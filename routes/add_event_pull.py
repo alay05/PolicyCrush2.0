@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, date
 from io import BytesIO
+from xml.sax.saxutils import escape
 
 from flask import Blueprint, render_template, request, send_file, url_for, redirect, abort, make_response, session, jsonify
 from features.categorize import categorize_article, CATEGORIES
@@ -157,31 +158,150 @@ def add_event_pull_export_pdf():
         # nothing matched the current range; bounce to review
         return redirect(url_for("add_event_pull.add_event_categories_review"))
 
-    # Render HTML (category-grouped) then to PDF
-    html = render_template(
-        "pdf.html",
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import inch
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    except Exception as exc:
+        return make_response(
+            f"PDF export is unavailable in this deployment environment: {exc}",
+            503,
+        )
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        leftMargin=0.65 * inch,
+        rightMargin=0.65 * inch,
+        topMargin=0.7 * inch,
+        bottomMargin=0.7 * inch,
         title="AddEvent Categories",
-        categories=ordered,
-        generated_at=datetime.now(),
-        include_ics=True,
     )
 
-    try:
-        from weasyprint import HTML  # type: ignore
-        pdf_bytes = HTML(string=html, base_url=request.host_url).write_pdf()
-        fname = f"addevent-categories-{start.strftime('%m_%d')}to{end.strftime('%m_%d')}.pdf"
-        return send_file(BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=fname)
-    except Exception:
-        pass
-    try:
-        import pdfkit  # type: ignore
-        pdf_bytes = pdfkit.from_string(html, False)
-        fname = f"addevent-categories-{start.strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}.pdf"
-        return send_file(BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=fname)
-    except Exception:
-        resp = make_response(html)
-        resp.headers["Content-Type"] = "text/html; charset=utf-8"
-        return resp
+    styles = getSampleStyleSheet()
+    title_style = styles["Title"]
+    title_style.fontName = "Helvetica-Bold"
+    title_style.fontSize = 20
+    title_style.leading = 24
+
+    heading_style = styles["Heading2"]
+    heading_style.fontName = "Helvetica-Bold"
+    heading_style.fontSize = 14
+    heading_style.leading = 18
+    heading_style.spaceBefore = 12
+    heading_style.spaceAfter = 6
+    heading_style.textColor = colors.HexColor("#111827")
+
+    body_style = ParagraphStyle(
+        "AddEventBody",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=10,
+        leading=13,
+        textColor=colors.HexColor("#111827"),
+        spaceAfter=2,
+    )
+    link_style = ParagraphStyle(
+        "AddEventLink",
+        parent=body_style,
+        textColor=colors.HexColor("#1d4ed8"),
+    )
+    date_style = ParagraphStyle(
+        "AddEventDate",
+        parent=body_style,
+        fontName="Helvetica-Bold",
+    )
+
+    story = [
+        Paragraph("AddEvent Categories", title_style),
+        Spacer(1, 0.15 * inch),
+    ]
+
+    for label, items in ordered.items():
+        if not items:
+            continue
+
+        story.append(Paragraph(escape(label), heading_style))
+        rows = [[
+            Paragraph("Date", date_style),
+            Paragraph("Title", date_style),
+            Paragraph("Links", date_style),
+        ]]
+
+        for ev in items:
+            starts_at_dt = ev.get("starts_at_dt") if isinstance(ev, dict) else getattr(ev, "starts_at_dt", None)
+            when_text = ev.get("when_text") if isinstance(ev, dict) else getattr(ev, "when_text", "")
+            title = ev.get("title") if isinstance(ev, dict) else getattr(ev, "title", "")
+            original_link = ev.get("original_link") if isinstance(ev, dict) else getattr(ev, "original_link", "")
+            addevent_url = ev.get("addevent_url") if isinstance(ev, dict) else getattr(ev, "addevent_url", "")
+            event_id = ev.get("id") if isinstance(ev, dict) else getattr(ev, "id", "")
+
+            if starts_at_dt:
+                date_text = escape(starts_at_dt.strftime("%Y-%m-%d %H:%M"))
+            elif when_text:
+                date_text = escape(str(when_text))
+            else:
+                date_text = "—"
+
+            title_html = escape(title or "")
+            if original_link:
+                title_html = f'<link href="{escape(original_link)}" color="blue">{title_html}</link>'
+
+            links_html = []
+            if original_link:
+                links_html.append(
+                    f'<b>Link:</b> <link href="{escape(original_link)}" color="blue">{escape(original_link)}</link>'
+                )
+            elif addevent_url:
+                links_html.append(
+                    f'<b>Calendar:</b> <link href="{escape(addevent_url)}" color="blue">{escape(addevent_url)}</link>'
+                )
+
+            if event_id:
+                ics_url = url_for("add_event_pull.add_event_pull_event_ics", event_id=event_id, _external=True)
+                links_html.append(
+                    f'<b>ICS:</b> <link href="{escape(ics_url)}" color="blue">{escape(ics_url)}</link>'
+                )
+
+            if not links_html:
+                links_html.append("<i>No link found.</i>")
+
+            rows.append([
+                Paragraph(date_text, body_style),
+                Paragraph(title_html or "&mdash;", link_style),
+                Paragraph("<br/>".join(links_html), link_style),
+            ])
+
+        table = Table(rows, colWidths=[1.45 * inch, 3.2 * inch, 2.65 * inch], repeatRows=1)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.white),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#6b7280")),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+            ("LINEBELOW", (0, 0), (-1, 0), 0.5, colors.HexColor("#e5e7eb")),
+            ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#f9fafb")),
+            ("BOX", (0, 1), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+            ("INNERGRID", (0, 1), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 1), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 1), (-1, -1), 7),
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 0.14 * inch))
+
+    story.append(Spacer(1, 0.12 * inch))
+    story.append(Paragraph(f"Generated {escape(datetime.now().strftime('%Y-%m-%d %H:%M'))}", body_style))
+
+    doc.build(story)
+    pdf_bytes = buffer.getvalue()
+    fname = f"addevent-categories-{start.strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}.pdf"
+    return send_file(BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=fname)
 
 
 @add_event_pull.route("/add-event-pull/ics/<event_id>.ics", methods=["GET"])
@@ -371,4 +491,3 @@ def add_event_pull_move_article():
     session["addevent_categories_cache"] = cache
     session.modified = True
     return jsonify(ok=True)
-
