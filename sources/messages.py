@@ -11,14 +11,13 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import Flow, InstalledAppFlow
+from itsdangerous import BadSignature, URLSafeSerializer
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
 SESSION_KEY = "gmail_oauth_credentials"
-STATE_KEY = "gmail_oauth_state"
-REDIRECT_KEY = "gmail_post_auth_redirect"
 
 
 class GmailAuthRequired(RuntimeError):
@@ -32,6 +31,11 @@ def _allow_insecure_local_oauth(redirect_uri: str):
         os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
     else:
         os.environ.pop("OAUTHLIB_INSECURE_TRANSPORT", None)
+
+
+def _state_serializer() -> URLSafeSerializer:
+    secret_key = os.getenv("FLASK_SECRET_KEY", "CHANGE_ME_TO_RANDOM_STRING")
+    return URLSafeSerializer(secret_key, salt="gmail-oauth-state")
 
 
 def _oauth_client_config():
@@ -114,15 +118,13 @@ def start_auth_flow(redirect_uri: str, next_url: str) -> str:
     _allow_insecure_local_oauth(redirect_uri)
     flow = Flow.from_client_config(config, SCOPES)
     flow.redirect_uri = redirect_uri
+    state_token = _state_serializer().dumps({"next": next_url})
     authorize_url, state = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
         prompt="consent",
+        state=state_token,
     )
-
-    session[STATE_KEY] = state
-    session[REDIRECT_KEY] = next_url
-    session.modified = True
     return authorize_url
 
 
@@ -131,9 +133,17 @@ def finish_auth_flow(authorization_response: str, redirect_uri: str):
     if not config:
         raise RuntimeError("Google OAuth web credentials are not configured.")
 
-    state = session.get(STATE_KEY)
+    from urllib.parse import parse_qs, urlparse
+
+    query_params = parse_qs(urlparse(authorization_response).query)
+    state = (query_params.get("state") or [None])[0]
     if not state:
-        raise RuntimeError("Missing Gmail OAuth state in session.")
+        raise RuntimeError("Missing Gmail OAuth state in callback.")
+
+    try:
+        state_payload = _state_serializer().loads(state)
+    except BadSignature as exc:
+        raise RuntimeError("Invalid Gmail OAuth state.") from exc
 
     _allow_insecure_local_oauth(redirect_uri)
     flow = Flow.from_client_config(config, SCOPES, state=state)
@@ -141,9 +151,8 @@ def finish_auth_flow(authorization_response: str, redirect_uri: str):
     flow.fetch_token(authorization_response=authorization_response)
 
     session[SESSION_KEY] = _serialize_credentials(flow.credentials)
-    session.pop(STATE_KEY, None)
     session.modified = True
-    return session.pop(REDIRECT_KEY, None) or "/gmail"
+    return state_payload.get("next") or "/gmail"
 
 
 def _authenticate_local_desktop():
@@ -186,7 +195,7 @@ def authenticate():
 def logout():
     if has_request_context():
         removed = False
-        for key in (SESSION_KEY, STATE_KEY, REDIRECT_KEY):
+        for key in (SESSION_KEY,):
             if key in session:
                 session.pop(key, None)
                 removed = True
