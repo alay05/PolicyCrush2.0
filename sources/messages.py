@@ -85,50 +85,60 @@ def _load_blob_credentials_payload() -> dict | None:
     if not sid:
         return None
 
-    from vercel.blob import get as blob_get
+    try:
+        from vercel.blob import get as blob_get
 
-    result = blob_get(_gmail_blob_path(sid), access="private", token=os.getenv("BLOB_READ_WRITE_TOKEN"))
-    if not result:
-        print("gmail blob load: missing result", {"sid": sid})
-        return None
+        result = blob_get(_gmail_blob_path(sid), access="private", token=os.getenv("BLOB_READ_WRITE_TOKEN"))
+        if not result:
+            print("gmail blob load: missing result", {"sid": sid})
+            return None
 
-    raw = None
-    if getattr(result, "stream", None):
-        raw = _read_stream(result.stream)
-    else:
-        download_url = (
-            getattr(result, "url", None)
-            or getattr(result, "download_url", None)
-            or getattr(result, "downloadUrl", None)
-        )
+        raw = None
+        if getattr(result, "stream", None):
+            raw = _read_stream(result.stream)
+        else:
+            download_url = (
+                getattr(result, "url", None)
+                or getattr(result, "download_url", None)
+                or getattr(result, "downloadUrl", None)
+            )
+            print(
+                "gmail blob load: missing stream",
+                {
+                    "sid": sid,
+                    "has_result": True,
+                    "download_url_present": bool(download_url),
+                },
+            )
+            if not download_url:
+                return None
+
+            headers = {}
+            blob_token = os.getenv("BLOB_READ_WRITE_TOKEN")
+            if blob_token:
+                headers["Authorization"] = f"Bearer {blob_token}"
+
+            response = __import__("requests").get(download_url, headers=headers, timeout=20)
+            response.raise_for_status()
+            raw = response.content
+
+        payload = json.loads(raw.decode("utf-8"))
         print(
-            "gmail blob load: missing stream",
+            "gmail blob load",
             {
                 "sid": sid,
-                "has_result": True,
-                "download_url_present": bool(download_url),
+                "raw_len": len(raw),
+                "payload_type": type(payload).__name__,
+                "payload_keys": list(payload.keys())[:10] if isinstance(payload, dict) else None,
             },
         )
-        if not download_url:
-            return None
-        response = __import__("requests").get(download_url, timeout=20)
-        response.raise_for_status()
-        raw = response.content
-
-    payload = json.loads(raw.decode("utf-8"))
-    print(
-        "gmail blob load",
-        {
-            "sid": sid,
-            "raw_len": len(raw),
-            "payload_type": type(payload).__name__,
-            "payload_keys": list(payload.keys())[:10] if isinstance(payload, dict) else None,
-        },
-    )
-    if isinstance(payload, dict) and "data" in payload:
-        return payload.get("data") or {}
-    if isinstance(payload, dict):
-        return payload
+        if isinstance(payload, dict) and "data" in payload:
+            return payload.get("data") or {}
+        if isinstance(payload, dict):
+            return payload
+    except Exception as exc:
+        print("gmail blob load error", {"sid": sid, "error": str(exc)})
+        return None
     return None
 
 
