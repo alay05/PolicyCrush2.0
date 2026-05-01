@@ -47,14 +47,19 @@ def _ensure_session_bucket():
         session["senate_cache"] = None
 
 def _find_cached_item(source: str, item_id: str, cur=None):
+    curated_items = (cur or session.get("curation", {})).get(source, [])
+
+    def _search_curated():
+        for item in curated_items:
+            if item.get("id") == item_id:
+                return item
+        return None
+
     if source == "gmail":
         for item in session.get("gmail_cache", []):
             if item.get("id") == item_id:
                 return item
-        for item in (cur or session.get("curation", {})).get("gmail", []):
-            if item.get("id") == item_id:
-                return item
-        return None
+        return _search_curated()
 
     if source == "news":
         cache = session.get("news_cache") or {}
@@ -62,7 +67,7 @@ def _find_cached_item(source: str, item_id: str, cur=None):
             for item in meta.get("items", []):
                 if item.get("id") == item_id:
                     return item
-        return None
+        return _search_curated()
 
     if source == "house":
         cache = session.get("house_cache") or {}
@@ -71,7 +76,7 @@ def _find_cached_item(source: str, item_id: str, cur=None):
                 for item in meta.get(side, []):
                     if item.get("id") == item_id:
                         return item
-        return None
+        return _search_curated()
 
     if source == "senate":
         cache = session.get("senate_cache") or {}
@@ -80,9 +85,24 @@ def _find_cached_item(source: str, item_id: str, cur=None):
                 for item in meta.get(tag, []):
                     if item.get("id") == item_id:
                         return item
-        return None
+        return _search_curated()
 
     return None
+
+
+def _selected_items_from_cache(source: str, selected_ids):
+    resolved = []
+    seen = set()
+    for item_id in selected_ids or []:
+        obj = _find_cached_item(source, item_id)
+        if not obj or item_id in seen:
+            continue
+        seen.add(item_id)
+        item = dict(obj)
+        item["manual"] = False
+        item["source"] = source
+        resolved.append(item)
+    return resolved
 
 def _rehydrate(items, source: str):
     resolved = []
@@ -379,7 +399,7 @@ def production_select_news():
     selected_ids = set(request.form.getlist("selected"))
     session["news_manual_drafts"] = manual_rows
     session["curation"]["news"] = (
-        [{"id": aid, "manual": False, "source": "news"} for aid in selected_ids]
+        _selected_items_from_cache("news", selected_ids)
         + manuals
     )
     session.modified = True
@@ -495,7 +515,7 @@ def production_select_house():
     selected_ids = set(request.form.getlist("selected"))
     session["house_manual_drafts"] = manual_rows
     session["curation"]["house"] = (
-        [{"id": aid, "manual": False, "source": "house"} for aid in selected_ids]
+        _selected_items_from_cache("house", selected_ids)
         + manuals
     )
     session.modified = True
@@ -608,7 +628,7 @@ def production_select_senate():
     selected_ids = set(request.form.getlist("selected"))
     session["senate_manual_drafts"] = manual_rows
     session["curation"]["senate"] = (
-        [{"id": aid, "manual": False, "source": "senate"} for aid in selected_ids]
+        _selected_items_from_cache("senate", selected_ids)
         + manuals
     )
     session.modified = True
