@@ -5,7 +5,7 @@ import re
 import hashlib
 from io import BytesIO
 from collections import OrderedDict
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, quoteattr
 
 from production.adapters import fetch_gmail_unread
 from production.adapters import fetch_news_bundle
@@ -1017,7 +1017,7 @@ def production_export_categories_pdf():
             title_html = escape(item.get("title") or "")
             url = (item.get("url") or "").strip()
             if url:
-                title_html = f'<link href="{escape(url)}" color="blue">{title_html}</link><br/><font size="8" color="#6b7280">{escape(url)}</font>'
+                title_html = f'<link href={quoteattr(url)} color="blue">{title_html}</link><br/><font size="8" color="#6b7280">{escape(url)}</font>'
 
             sublinks = item.get("sublinks") or []
             if sublinks:
@@ -1027,7 +1027,7 @@ def production_export_categories_pdf():
                     if sl_url:
                         title_html += (
                             f'<br/><font size="9"><b>{heading}:</b> '
-                            f'<link href="{sl_url}" color="blue">{sl_url}</link></font>'
+                            f'<link href={quoteattr(sl_url)} color="blue">{sl_url}</link></font>'
                         )
 
             rows.append([

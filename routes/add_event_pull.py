@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, date
 from io import BytesIO
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, quoteattr
 
 from flask import Blueprint, render_template, request, send_file, url_for, redirect, abort, make_response, session, jsonify
 from features.categorize import categorize_article, CATEGORIES
@@ -248,22 +248,22 @@ def add_event_pull_export_pdf():
 
             title_html = escape(title or "")
             if original_link:
-                title_html = f'<link href="{escape(original_link)}" color="blue">{title_html}</link>'
+                title_html = f'<link href={quoteattr(original_link)} color="blue">{title_html}</link>'
 
             links_html = []
             if original_link:
                 links_html.append(
-                    f'<b>Link:</b> <link href="{escape(original_link)}" color="blue">{escape(original_link)}</link>'
+                    f'<b>Link:</b> <link href={quoteattr(original_link)} color="blue">{escape(original_link)}</link>'
                 )
             elif addevent_url:
                 links_html.append(
-                    f'<b>Calendar:</b> <link href="{escape(addevent_url)}" color="blue">{escape(addevent_url)}</link>'
+                    f'<b>Calendar:</b> <link href={quoteattr(addevent_url)} color="blue">{escape(addevent_url)}</link>'
                 )
 
             if event_id:
                 ics_url = url_for("add_event_pull.add_event_pull_event_ics", event_id=event_id, _external=True)
                 links_html.append(
-                    f'<b>ICS:</b> <link href="{escape(ics_url)}" color="blue">{escape(ics_url)}</link>'
+                    f'<b>ICS:</b> <link href={quoteattr(ics_url)} color="blue">{escape(ics_url)}</link>'
                 )
 
             if not links_html:
