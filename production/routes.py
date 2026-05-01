@@ -9,6 +9,7 @@ from production.adapters import fetch_gmail_unread
 from production.adapters import fetch_news_bundle
 from production.adapters import fetch_house_bundle
 from production.adapters import fetch_senate_bundle
+from sources.messages import GmailAuthRequired, is_authenticated
 from features.categorize import categorize_article, SPECIAL_CALENDAR, CATEGORIES
 
 from features.calendar import (
@@ -173,6 +174,7 @@ def production_gmail():
         error=None,
         action_was_load=bool(emails),
         drafts=drafts,
+        gmail_connected=is_authenticated(),
     )
 
 
@@ -188,6 +190,8 @@ def production_select_gmail():
             # only when reloading Gmail do we invalidate downstream News
             session["news_ready"] = False
             session.modified = True
+        except GmailAuthRequired:
+            return redirect(url_for("gmail.gmail_oauth_start", next=url_for("production.production_gmail")))
         except Exception as e:
             return render_template(
                 "production_gmail.html",
@@ -195,6 +199,7 @@ def production_select_gmail():
                 error=f"Error: {e}",
                 action_was_load=True,
                 drafts={},
+                gmail_connected=is_authenticated(),
             )
 
         saved_manuals = [a for a in session["curation"]["gmail"] if a.get("manual") and a.get("source") == "gmail"]
@@ -220,6 +225,7 @@ def production_select_gmail():
             error=None,
             action_was_load=True,
             drafts=grouped,
+            gmail_connected=is_authenticated(),
         )
 
     # action == "next": collect manual items and move on without touching news_ready

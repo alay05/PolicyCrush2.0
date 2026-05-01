@@ -11,6 +11,14 @@
   <a href="/" class="home-button">← Home</a>
   <h1>Gmail Newsletters</h1>
 
+  <div style="margin: 1rem 0; text-align:center;">
+    {% if gmail_connected %}
+      <a href="{{ url_for('gmail.gmail_logout') }}"><button type="button" style="background-color: #d62828; color: white;">Disconnect Gmail</button></a>
+    {% else %}
+      <a href="{{ url_for('gmail.gmail_oauth_start', next=url_for('production.production_gmail')) }}"><button type="button">Connect Gmail</button></a>
+    {% endif %}
+  </div>
+
   <form method="POST" action="{{ url_for('production.production_select_gmail') }}" id="gmail-form" style="display: block;">
     <div style="margin: 1rem 0; text-align:center;">
       <button type="submit" name="action" value="load">Get Unread Messages</button>

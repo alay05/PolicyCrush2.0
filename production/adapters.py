@@ -2,7 +2,7 @@ import hashlib
 from datetime import datetime, date, timedelta
 from features.classify import classify
 
-from sources.messages import authenticate, get_messages, extract_html_from_email
+from sources.messages import GmailAuthRequired, authenticate, get_messages, extract_html_from_email
 from sources.catalog import HOUSE_SOURCES, NEWS_SOURCES, SENATE_SOURCES
 
 
