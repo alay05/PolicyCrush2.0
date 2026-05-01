@@ -1,23 +1,26 @@
 import base64
+import asyncio
 import email
 import json
 import os
 import pickle
+import secrets
 from email.header import decode_header
 from email.utils import parseaddr
 
-from flask import has_request_context, session
+from flask import after_this_request, has_request_context, request, session
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import Flow, InstalledAppFlow
-from itsdangerous import BadSignature, URLSafeSerializer
+from itsdangerous import BadSignature, Signer, URLSafeSerializer
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
 SESSION_KEY = "gmail_oauth_credentials"
+GMAIL_AUTH_COOKIE = "gmail_auth"
 
 
 class GmailAuthRequired(RuntimeError):
@@ -36,6 +39,102 @@ def _allow_insecure_local_oauth(redirect_uri: str):
 def _state_serializer() -> URLSafeSerializer:
     secret_key = os.getenv("FLASK_SECRET_KEY", "CHANGE_ME_TO_RANDOM_STRING")
     return URLSafeSerializer(secret_key, salt="gmail-oauth-state")
+
+
+def _gmail_cookie_signer() -> Signer:
+    secret_key = os.getenv("FLASK_SECRET_KEY", "CHANGE_ME_TO_RANDOM_STRING")
+    return Signer(secret_key, salt="gmail-auth-cookie")
+
+
+def _sign_gmail_sid(sid: str) -> str:
+    return _gmail_cookie_signer().sign(sid.encode("utf-8")).decode("utf-8")
+
+
+def _unsign_gmail_sid(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        return _gmail_cookie_signer().unsign(value.encode("utf-8")).decode("utf-8")
+    except BadSignature:
+        return None
+
+
+def _use_blob_auth() -> bool:
+    return has_request_context() and bool(os.getenv("BLOB_READ_WRITE_TOKEN"))
+
+
+def _gmail_blob_path(sid: str) -> str:
+    return f"gmail-auth/{sid}.json"
+
+
+async def _consume_async_stream(stream) -> bytes:
+    chunks = []
+    async for chunk in stream:
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _read_stream(stream) -> bytes:
+    if hasattr(stream, "__aiter__"):
+        return asyncio.run(_consume_async_stream(stream))
+    return b"".join(stream)
+
+
+def _load_blob_credentials_payload() -> dict | None:
+    sid = _unsign_gmail_sid(request.cookies.get(GMAIL_AUTH_COOKIE))
+    if not sid:
+        return None
+
+    from vercel.blob import get as blob_get
+
+    result = blob_get(_gmail_blob_path(sid), access="private", token=os.getenv("BLOB_READ_WRITE_TOKEN"))
+    if not result or not getattr(result, "stream", None):
+        return None
+
+    raw = _read_stream(result.stream)
+    return json.loads(raw.decode("utf-8"))
+
+
+def _persist_blob_credentials(payload: dict):
+    sid = _unsign_gmail_sid(request.cookies.get(GMAIL_AUTH_COOKIE)) or secrets.token_urlsafe(24)
+
+    @after_this_request
+    def _save(response):
+        from vercel.blob import put as blob_put
+
+        blob_put(
+            _gmail_blob_path(sid),
+            json.dumps(payload).encode("utf-8"),
+            access="private",
+            content_type="application/json",
+            overwrite=True,
+            token=os.getenv("BLOB_READ_WRITE_TOKEN"),
+        )
+        response.set_cookie(
+            GMAIL_AUTH_COOKIE,
+            _sign_gmail_sid(sid),
+            httponly=True,
+            secure=os.getenv("VERCEL", "").lower() in {"1", "true"},
+            samesite=os.getenv("SESSION_COOKIE_SAMESITE", "Lax"),
+            path="/",
+        )
+        return response
+
+
+def _clear_blob_credentials():
+    sid = _unsign_gmail_sid(request.cookies.get(GMAIL_AUTH_COOKIE))
+
+    @after_this_request
+    def _clear(response):
+        if sid:
+            try:
+                from vercel.blob import delete as blob_delete
+
+                blob_delete(_gmail_blob_path(sid), token=os.getenv("BLOB_READ_WRITE_TOKEN"))
+            except Exception:
+                pass
+        response.delete_cookie(GMAIL_AUTH_COOKIE, path="/")
+        return response
 
 
 def _oauth_client_config():
@@ -102,7 +201,8 @@ def _deserialize_credentials(payload: dict | None) -> Credentials | None:
 
 def is_authenticated() -> bool:
     if has_request_context():
-        creds = _deserialize_credentials(session.get(SESSION_KEY))
+        payload = _load_blob_credentials_payload() if _use_blob_auth() else session.get(SESSION_KEY)
+        creds = _deserialize_credentials(payload)
         return bool(creds and (creds.valid or creds.refresh_token))
     return os.path.exists("token.pickle")
 
@@ -150,8 +250,12 @@ def finish_auth_flow(authorization_response: str, redirect_uri: str):
     flow.redirect_uri = redirect_uri
     flow.fetch_token(authorization_response=authorization_response)
 
-    session[SESSION_KEY] = _serialize_credentials(flow.credentials)
-    session.modified = True
+    payload = _serialize_credentials(flow.credentials)
+    if _use_blob_auth():
+        _persist_blob_credentials(payload)
+    else:
+        session[SESSION_KEY] = payload
+        session.modified = True
     return state_payload.get("next") or "/gmail"
 
 
@@ -177,15 +281,20 @@ def authenticate():
     if not has_request_context():
         return _authenticate_local_desktop()
 
-    creds = _deserialize_credentials(session.get(SESSION_KEY))
+    payload = _load_blob_credentials_payload() if _use_blob_auth() else session.get(SESSION_KEY)
+    creds = _deserialize_credentials(payload)
     if not creds:
         raise GmailAuthRequired("/gmail/oauth/start")
 
     if not creds.valid:
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
-            session[SESSION_KEY] = _serialize_credentials(creds)
-            session.modified = True
+            refreshed_payload = _serialize_credentials(creds)
+            if _use_blob_auth():
+                _persist_blob_credentials(refreshed_payload)
+            else:
+                session[SESSION_KEY] = refreshed_payload
+                session.modified = True
         else:
             raise GmailAuthRequired("/gmail/oauth/start")
 
@@ -194,11 +303,15 @@ def authenticate():
 
 def logout():
     if has_request_context():
+        if _use_blob_auth():
+            had_cookie = bool(_unsign_gmail_sid(request.cookies.get(GMAIL_AUTH_COOKIE)))
+            _clear_blob_credentials()
+            return had_cookie
+
         removed = False
-        for key in (SESSION_KEY,):
-            if key in session:
-                session.pop(key, None)
-                removed = True
+        if SESSION_KEY in session:
+            session.pop(SESSION_KEY, None)
+            removed = True
         if removed:
             session.modified = True
         return removed
