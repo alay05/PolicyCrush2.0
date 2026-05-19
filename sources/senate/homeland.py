@@ -13,6 +13,8 @@ def fetch_home_articles(start_date=None):
         soup = BeautifulSoup(response.text, "html.parser")
         blocks = soup.select("div.jet-listing-grid__item")
         items = []
+        listing_year = datetime.now().year
+        previous_month = None
 
         for block in blocks:
             # URL
@@ -34,8 +36,18 @@ def fetch_home_articles(start_date=None):
                 continue
 
             try:
-                raw_date = f"{month_tag.text.strip()} {day_tag.text.strip()} {datetime.now().year}"
+                month_text = month_tag.get_text(strip=True)
+                day_text = day_tag.get_text(strip=True)
+                month_number = datetime.strptime(month_text, "%b").month
+
+                # Listing cards expose month/day only. The feed is newest-to-oldest,
+                # so if the month increases (Jan -> Dec) we've crossed into the prior year.
+                if previous_month is not None and month_number > previous_month:
+                    listing_year -= 1
+
+                raw_date = f"{month_text} {day_text} {listing_year}"
                 pub_date = datetime.strptime(raw_date, "%b %d %Y")
+                previous_month = month_number
             except ValueError:
                 continue
 
