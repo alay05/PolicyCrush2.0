@@ -77,8 +77,18 @@ def _api_session() -> requests.Session:
 
 # ---- Parse / format ----------------------------------------------------------
 
-def _parse_iso(s: str | None) -> datetime | None:
-    """Parse common AddEvent datetime strings. If tz-naive, assume LOCAL_TZ."""
+def _timezone_for_name(name: str | None):
+    """Return an AddEvent timezone, falling back to the configured local zone."""
+    if not name or name == "floating" or ZoneInfo is None:
+        return LOCAL_TZ
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        return LOCAL_TZ
+
+
+def _parse_iso(s: str | None, assumed_tz=None) -> datetime | None:
+    """Parse common AddEvent datetime strings using the event's timezone."""
     if not s:
         return None
     try:
@@ -97,7 +107,16 @@ def _parse_iso(s: str | None) -> datetime | None:
                 dt = datetime.strptime(s, "%Y-%m-%d")
             except Exception:
                 return None
-    return _ensure_aware_local(dt)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=assumed_tz or LOCAL_TZ)
+    return dt
+
+
+def _format_time(dt: datetime) -> str:
+    """Format a time without platform-specific strftime directives."""
+    hour = dt.hour % 12 or 12
+    zone = dt.tzname() or ""
+    return f"{hour}:{dt.strftime('%M %p')}{f' {zone}' if zone else ''}"
 
 def _api_date_bounds_str(start: date, end: date) -> tuple[str, str]:
     """
@@ -172,6 +191,10 @@ class PulledEvent(t.TypedDict, total=False):
     ends_at: str
     starts_at_dt: datetime
     ends_at_dt: datetime | None
+    all_day_event: bool
+    timezone: str
+    date_text: str
+    time_text: str
     original_link: str | None
     calendar_id: str | None
     addevent_url: str | None
@@ -208,10 +231,26 @@ def _shape_event(raw: dict) -> PulledEvent:
     ev["starts_at"] = str(starts) if starts else ""
     ev["ends_at"] = str(ends) if ends else ""
 
-    sdt = _parse_iso(ev["starts_at"])
-    edt = _parse_iso(ev["ends_at"]) if ev["ends_at"] else None
+    timezone_name = str(raw.get("timezone") or "")
+    event_tz = _timezone_for_name(timezone_name)
+    all_day = raw.get("all_day_event") is True or str(raw.get("all_day_event")).lower() in {
+        "1", "true", "yes"
+    }
+
+    sdt = _parse_iso(ev["starts_at"], event_tz)
+    edt = _parse_iso(ev["ends_at"], event_tz) if ev["ends_at"] else None
     ev["starts_at_dt"] = sdt or datetime.min.replace(tzinfo=timezone.utc)
     ev["ends_at_dt"] = edt
+    ev["all_day_event"] = all_day
+    ev["timezone"] = timezone_name
+
+    if sdt:
+        local_start = sdt.astimezone(LOCAL_TZ)
+        ev["date_text"] = local_start.strftime("%Y-%m-%d")
+        ev["time_text"] = "All day" if all_day else _format_time(local_start)
+    else:
+        ev["date_text"] = ""
+        ev["time_text"] = ""
 
     ev["original_link"] = _extract_first_url(desc)
 
@@ -222,7 +261,12 @@ def _shape_event(raw: dict) -> PulledEvent:
     ev["calendar_id"] = str(cal_id) if cal_id else None
 
     ev["addevent_url"] = (
-        raw.get("landing_page_url") or raw.get("event_url") or raw.get("url") or None
+        raw.get("landing_page_url")
+        or raw.get("event_url")
+        or raw.get("link_long")
+        or raw.get("link_short")
+        or raw.get("url")
+        or None
     )
 
     return ev

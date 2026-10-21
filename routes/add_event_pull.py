@@ -326,7 +326,12 @@ def _event_minimal(ev: dict) -> dict:
     """Normalize an AddEvent record into the minimal shape used for categorizing."""
     title = (ev.get("title") or "")[:240]  # trim to keep cookie small
     url   = (ev.get("original_link") or ev.get("addevent_url") or "")[:300]
-    date_str = ev.get("when_text") or ev.get("start") or ""
+    date_str = ev.get("date_text") or ""
+    time_str = ev.get("time_text") or ""
+    if date_str and time_str:
+        date_str = f"{date_str} {time_str}"
+    elif not date_str:
+        date_str = ev.get("starts_at") or ev.get("when_text") or ev.get("start") or ""
     if isinstance(date_str, (datetime, date)):
         date_str = date_str.isoformat()
     return {
