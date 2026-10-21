@@ -7,58 +7,63 @@
   <title>AddEvent - Categories</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}">
 </head>
-<body>
+<body class="w2w-page">
   <!-- Top-left goes HOME -->
   <a href="/" class="home-button">← Home</a>
-  <h1>AddEvent Categories</h1>
+  <header class="w2w-header">
+    <p class="w2w-eyebrow">W2W4</p>
+    <h1>Event Categories</h1>
+    <p class="w2w-subtitle">Drag events between sections, then export the finalized list.</p>
+  </header>
   {% if built_at %}
-    <p><small>Built: {{ built_at }}</small></p>
+    <p class="w2w-built-at">Last organized {{ built_at }}</p>
   {% endif %}
 
   {% if categories %}
     {% for label, items in categories.items() %}
-      <div class="source" data-category="{{ label }}">
-        <h2>{{ label }}</h2>
+      <section class="source w2w-category" data-category="{{ label }}">
+        <div class="w2w-day-heading">
+          <h2>{{ label }}</h2>
+          <span>{{ items|length }} event{% if items|length != 1 %}s{% endif %}</span>
+        </div>
 
         <div class="article-list">
           {% for a in items %}
-            <div class="article"
-                 data-id="{{ a._ref }}"
-                 style="display:flex; justify-content:space-between; align-items:center; gap:.6rem; padding:.35rem 0; border-bottom:1px solid #e5e7eb;">
-              <div style="cursor:grab; padding-right:.5rem; user-select:none; font-size:1.5rem;">☰</div>
+            <article class="w2w-category-event" data-id="{{ a._ref }}">
+              <div class="w2w-drag-handle" aria-label="Drag to move event" title="Drag to move">☰</div>
 
-              <div style="flex:1; min-width:0; overflow-wrap:anywhere;">
-                {% if a.date %}<span class="date">{{ a.date }}</span> - {% endif %}
+              <div class="w2w-category-event-content">
+                {% if a.date_label or a.date %}
+                  <div class="w2w-category-date">
+                    {{ a.date_label or a.date }}{% if a.time_label %} · {{ a.time_label }}{% endif %}
+                  </div>
+                {% endif %}
                 {% if a.url %}
-                  <a href="{{ a.url }}" target="_blank" class="article-title">{{ a.title }}</a>
+                  <a href="{{ a.url }}" target="_blank" rel="noopener noreferrer" class="article-title">{{ a.title }}</a>
                 {% else %}
                   {{ a.title }}
                 {% endif %}
+                {% if a.location %}<div class="w2w-event-location">{{ a.location }}</div>{% endif %}
               </div>
-            </div>
+            </article>
           {% endfor %}
         </div>
-      </div>
-      <div style="margin-top: 1.5rem;"></div>
+      </section>
     {% endfor %}
   {% else %}
     <p><em>No categories available.</em></p>
   {% endif %}
 
   <!-- Bottom button row like your other pages -->
-  <div style="text-align:center; margin-top: 1.25rem;">
-    <a href="{{ url_for('add_event_pull.add_event_pull_home') }}" style="text-decoration:none;">
-      <button type="button">← Back to Range</button>
-    </a>
+  <div class="w2w-toolbar w2w-footer-actions">
+    <a href="{{ url_for('add_event_pull.add_event_pull_home') }}" class="w2w-button w2w-button-secondary">← Back to range</a>
 
     {% if last_range and last_range.get('start') and last_range.get('end') %}
-      <a class="export-btn"
+      <a class="export-btn w2w-button w2w-button-primary"
          href="{{ url_for('add_event_pull.add_event_pull_export_pdf',
                           start=last_range.get('start'),
                           end=last_range.get('end')) }}"
-         style="text-decoration:none; margin-left:.5rem;">
-        <button type="button">Export PDF</button>
-      </a>
+         >Export PDF</a>
     {% endif %}
   </div>
 
@@ -70,7 +75,7 @@
       new Sortable(listEl, {
         group: 'categories',
         animation: 150,
-        handle: 'div[style*="cursor:grab"]',
+        handle: '.w2w-drag-handle',
         ghostClass: 'dragging',
         onAdd: persistMove,
         onUpdate: persistMove,

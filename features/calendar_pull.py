@@ -195,6 +195,9 @@ class PulledEvent(t.TypedDict, total=False):
     timezone: str
     date_text: str
     time_text: str
+    end_date_text: str
+    end_time_text: str
+    location: str
     original_link: str | None
     calendar_id: str | None
     addevent_url: str | None
@@ -251,6 +254,23 @@ def _shape_event(raw: dict) -> PulledEvent:
     else:
         ev["date_text"] = ""
         ev["time_text"] = ""
+
+    if edt:
+        local_end = edt.astimezone(LOCAL_TZ)
+        ev["end_date_text"] = local_end.strftime("%Y-%m-%d")
+        ev["end_time_text"] = "" if all_day else _format_time(local_end)
+    else:
+        ev["end_date_text"] = ""
+        ev["end_time_text"] = ""
+
+    location = raw.get("location") or raw.get("venue") or ""
+    if isinstance(location, dict):
+        location = ", ".join(
+            str(location.get(key) or "").strip()
+            for key in ("name", "address", "city", "state")
+            if str(location.get(key) or "").strip()
+        )
+    ev["location"] = str(location).strip()
 
     ev["original_link"] = _extract_first_url(desc)
 
@@ -387,6 +407,7 @@ def make_ics_for_event(ev: PulledEvent) -> str:
     uid = (ev.get("id") or f"pc-{int(datetime.now().timestamp())}") + "@policycrush"
     title = (ev.get("title") or "").replace("\n", " ").strip()
     desc = (ev.get("description") or "").strip()
+    location = (ev.get("location") or "").strip()
     url = ev.get("original_link") or ev.get("addevent_url") or ""
 
     sdt: datetime = _ensure_aware_local(ev.get("starts_at_dt")) or datetime.now().astimezone(LOCAL_TZ)
@@ -413,6 +434,9 @@ def make_ics_for_event(ev: PulledEvent) -> str:
     ]
     if url:
         lines.append(f"URL:{url}")
+    if location:
+        safe_location = location.replace("\\", "\\\\").replace(",", r"\,").replace(";", r"\;")
+        lines.append(f"LOCATION:{safe_location}")
     if desc:
         safe = desc.replace("\\", "\\\\").replace(",", r"\,").replace(";", r"\;")
         lines.append(f"DESCRIPTION:{safe}")

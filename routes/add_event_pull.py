@@ -20,6 +20,51 @@ from features.calendar_pull import (
 
 add_event_pull = Blueprint("add_event_pull", __name__)
 
+
+def _event_value(ev, key: str, default=""):
+    if isinstance(ev, dict):
+        return ev.get(key, default)
+    return getattr(ev, key, default)
+
+
+def _friendly_date(value: str | None) -> str:
+    if not value:
+        return ""
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d")
+        return parsed.strftime("%a, %b %d, %Y").replace(" 0", " ")
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _event_when_parts(ev) -> tuple[str, str]:
+    """Return compact, human-readable date and time labels for an event."""
+    date_text = str(_event_value(ev, "date_text") or "")
+    time_text = str(_event_value(ev, "time_text") or "")
+    end_date_text = str(_event_value(ev, "end_date_text") or "")
+    end_time_text = str(_event_value(ev, "end_time_text") or "")
+
+    starts_at_dt = _event_value(ev, "starts_at_dt", None)
+    if not date_text and starts_at_dt:
+        date_text = starts_at_dt.strftime("%Y-%m-%d")
+    date_label = _friendly_date(date_text) or "Date unavailable"
+
+    if time_text == "All day":
+        return date_label, time_text
+    if time_text and end_time_text:
+        if end_date_text and date_text and end_date_text != date_text:
+            return date_label, f"{time_text} – {_friendly_date(end_date_text)}, {end_time_text}"
+        return date_label, f"{time_text} – {end_time_text}"
+    if time_text:
+        return date_label, time_text
+    if starts_at_dt:
+        return date_label, starts_at_dt.strftime("%I:%M %p").lstrip("0")
+    return date_label, "Time unavailable"
+
+
+def _pdf_link(label: str, url: str) -> str:
+    return f'<link href={quoteattr(url)} color="#1d4ed8">{escape(label)}</link>'
+
 def _parse_date(s: str, fallback: date | None = None) -> date | None:
     try:
         return datetime.strptime(s, "%Y-%m-%d").date()
@@ -92,6 +137,7 @@ def add_event_pull_home():
         error=error,
         addevent_calendar_href="https://app.addevent.com/calendars/GT179952",
         categorize_ready=categorize_ready,
+        friendly_date=_friendly_date,
     )
 
 @add_event_pull.route("/add-event-pull/export", methods=["GET"])
@@ -178,7 +224,7 @@ def add_event_pull_export_pdf():
         rightMargin=0.65 * inch,
         topMargin=0.7 * inch,
         bottomMargin=0.7 * inch,
-        title="AddEvent Categories",
+        title="W2W4 Events",
     )
 
     styles = getSampleStyleSheet()
@@ -204,6 +250,21 @@ def add_event_pull_export_pdf():
         textColor=colors.HexColor("#111827"),
         spaceAfter=2,
     )
+    meta_style = ParagraphStyle(
+        "AddEventMeta",
+        parent=body_style,
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#6b7280"),
+    )
+    event_title_style = ParagraphStyle(
+        "AddEventTitle",
+        parent=body_style,
+        fontName="Helvetica-Bold",
+        fontSize=10.5,
+        leading=13,
+        spaceAfter=3,
+    )
     link_style = ParagraphStyle(
         "AddEventLink",
         parent=body_style,
@@ -215,9 +276,19 @@ def add_event_pull_export_pdf():
         fontName="Helvetica-Bold",
     )
 
+    event_count = sum(len(items) for items in ordered.values())
+    range_label = _friendly_date(start.isoformat())
+    if end != start:
+        range_label = f"{range_label} – {_friendly_date(end.isoformat())}"
+
     story = [
-        Paragraph("AddEvent Categories", title_style),
-        Spacer(1, 0.15 * inch),
+        Paragraph("W2W4 Events", title_style),
+        Paragraph(
+            f"{escape(range_label)} &nbsp;&bull;&nbsp; "
+            f"{event_count} {'event' if event_count == 1 else 'events'}",
+            meta_style,
+        ),
+        Spacer(1, 0.18 * inch),
     ]
 
     for label, items in ordered.items():
@@ -226,56 +297,41 @@ def add_event_pull_export_pdf():
 
         story.append(Paragraph(escape(label), heading_style))
         rows = [[
-            Paragraph("Date", date_style),
-            Paragraph("Title", date_style),
-            Paragraph("Links", date_style),
+            Paragraph("When", date_style),
+            Paragraph("Event", date_style),
         ]]
 
         for ev in items:
-            starts_at_dt = ev.get("starts_at_dt") if isinstance(ev, dict) else getattr(ev, "starts_at_dt", None)
-            when_text = ev.get("when_text") if isinstance(ev, dict) else getattr(ev, "when_text", "")
-            title = ev.get("title") if isinstance(ev, dict) else getattr(ev, "title", "")
-            original_link = ev.get("original_link") if isinstance(ev, dict) else getattr(ev, "original_link", "")
-            addevent_url = ev.get("addevent_url") if isinstance(ev, dict) else getattr(ev, "addevent_url", "")
-            event_id = ev.get("id") if isinstance(ev, dict) else getattr(ev, "id", "")
+            title = _event_value(ev, "title")
+            original_link = _event_value(ev, "original_link")
+            addevent_url = _event_value(ev, "addevent_url")
+            event_id = _event_value(ev, "id")
+            location = _event_value(ev, "location")
+            date_label, time_label = _event_when_parts(ev)
 
-            if starts_at_dt:
-                date_text = escape(starts_at_dt.strftime("%Y-%m-%d %H:%M"))
-            elif when_text:
-                date_text = escape(str(when_text))
-            else:
-                date_text = "—"
-
-            title_html = escape(title or "")
-            if original_link:
-                title_html = f'<link href={quoteattr(original_link)} color="blue">{title_html}</link>'
+            details = [Paragraph(escape(title or "Untitled event"), event_title_style)]
+            if location:
+                details.append(Paragraph(f"<b>Location:</b> {escape(str(location))}", meta_style))
 
             links_html = []
             if original_link:
-                links_html.append(
-                    f'<b>Link:</b> <link href={quoteattr(original_link)} color="blue">{escape(original_link)}</link>'
-                )
+                links_html.append(_pdf_link("Event details", original_link))
             elif addevent_url:
-                links_html.append(
-                    f'<b>Calendar:</b> <link href={quoteattr(addevent_url)} color="blue">{escape(addevent_url)}</link>'
-                )
+                links_html.append(_pdf_link("Event page", addevent_url))
 
             if event_id:
                 ics_url = url_for("add_event_pull.add_event_pull_event_ics", event_id=event_id, _external=True)
-                links_html.append(
-                    f'<b>ICS:</b> <link href={quoteattr(ics_url)} color="blue">{escape(ics_url)}</link>'
-                )
+                links_html.append(_pdf_link("Add to calendar", ics_url))
 
-            if not links_html:
-                links_html.append("<i>No link found.</i>")
+            if links_html:
+                details.append(Paragraph(" &nbsp;&bull;&nbsp; ".join(links_html), link_style))
 
             rows.append([
-                Paragraph(date_text, body_style),
-                Paragraph(title_html or "&mdash;", link_style),
-                Paragraph("<br/>".join(links_html), link_style),
+                Paragraph(f"<b>{escape(date_label)}</b><br/>{escape(time_label)}", body_style),
+                details,
             ])
 
-        table = Table(rows, colWidths=[1.45 * inch, 3.2 * inch, 2.65 * inch], repeatRows=1)
+        table = Table(rows, colWidths=[2.1 * inch, 5.1 * inch], repeatRows=1)
         table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.white),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#6b7280")),
@@ -283,9 +339,8 @@ def add_event_pull_export_pdf():
             ("FONTSIZE", (0, 0), (-1, 0), 10),
             ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
             ("LINEBELOW", (0, 0), (-1, 0), 0.5, colors.HexColor("#e5e7eb")),
-            ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#f9fafb")),
-            ("BOX", (0, 1), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
-            ("INNERGRID", (0, 1), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+            ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+            ("LINEBELOW", (0, 1), (-1, -1), 0.35, colors.HexColor("#e5e7eb")),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 8),
             ("RIGHTPADDING", (0, 0), (-1, -1), 8),
@@ -295,12 +350,19 @@ def add_event_pull_export_pdf():
         story.append(table)
         story.append(Spacer(1, 0.14 * inch))
 
-    story.append(Spacer(1, 0.12 * inch))
-    story.append(Paragraph(f"Generated {escape(datetime.now().strftime('%Y-%m-%d %H:%M'))}", body_style))
+    generated_at = datetime.now().strftime("%b %d, %Y at %I:%M %p").replace(" 0", " ")
 
-    doc.build(story)
+    def draw_footer(canvas, document):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(colors.HexColor("#6b7280"))
+        canvas.drawString(doc.leftMargin, 0.4 * inch, f"Generated {generated_at}")
+        canvas.drawRightString(letter[0] - doc.rightMargin, 0.4 * inch, f"Page {document.page}")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=draw_footer, onLaterPages=draw_footer)
     pdf_bytes = buffer.getvalue()
-    fname = f"addevent-categories-{start.strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}.pdf"
+    fname = f"w2w4-events-{start.strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}.pdf"
     return send_file(BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=fname)
 
 
@@ -326,7 +388,8 @@ def _event_minimal(ev: dict) -> dict:
     """Normalize an AddEvent record into the minimal shape used for categorizing."""
     title = (ev.get("title") or "")[:240]  # trim to keep cookie small
     url   = (ev.get("original_link") or ev.get("addevent_url") or "")[:300]
-    date_str = ev.get("date_text") or ""
+    date_only = ev.get("date_text") or ""
+    date_str = date_only
     time_str = ev.get("time_text") or ""
     if date_str and time_str:
         date_str = f"{date_str} {time_str}"
@@ -334,11 +397,16 @@ def _event_minimal(ev: dict) -> dict:
         date_str = ev.get("starts_at") or ev.get("when_text") or ev.get("start") or ""
     if isinstance(date_str, (datetime, date)):
         date_str = date_str.isoformat()
+    date_label = _friendly_date(str(date_only)) if date_only else ""
+    time_label = _event_when_parts(ev)[1] if date_only else time_str
     return {
         "id": ev.get("id"),
         "title": title,
         "url": url,
         "date": (date_str or "")[:40],
+        "date_label": date_label,
+        "time_label": time_label[:80],
+        "location": (ev.get("location") or "")[:180],
         "source": "addevent",
     }
 

@@ -7,19 +7,25 @@
   <title>W2W4</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}">
 </head>
-<body>
+<body class="w2w-page">
   <a href="/" class="home-button">← Home</a>
-  <h1>W2W4</h1>
+  <header class="w2w-header">
+    <p class="w2w-eyebrow">Calendar workflow</p>
+    <h1>W2W4</h1>
+    <p class="w2w-subtitle">Choose a date range to review and organize upcoming events.</p>
+  </header>
 
   <form method="POST" action="{{ url_for('add_event_pull.add_event_pull_home') }}"
-        id="add-event-pull-form"
-        style="display:flex; flex-wrap:wrap; gap:.75rem; align-items:center; justify-content:center; margin:1rem 0 1.25rem;">
-    <label for="start_date">Start:</label>
-    <input type="date" id="start_date" name="start_date" value="{{ start_date }}" required>
-    <label for="end_date">End:</label>
-    <input type="date" id="end_date" name="end_date" value="{{ end_date }}" required>
-
-    <button type="submit">Get Events</button>
+        id="add-event-pull-form" class="w2w-range-form">
+    <div class="w2w-field">
+      <label for="start_date">Start date</label>
+      <input type="date" id="start_date" name="start_date" value="{{ start_date }}" required>
+    </div>
+    <div class="w2w-field">
+      <label for="end_date">End date</label>
+      <input type="date" id="end_date" name="end_date" value="{{ end_date }}" required>
+    </div>
+    <button type="submit" class="w2w-button w2w-button-primary">Get events</button>
   </form>
 
   {% if error %}
@@ -27,73 +33,64 @@
   {% endif %}
 
   {% if grouped and grouped|length %}
-    <div style="text-align:center; margin-bottom: 1rem;">
+    <div class="w2w-toolbar">
       <form method="POST" action="{{ url_for('add_event_pull.add_event_pull_build_categories') }}"
-      style="display:inline; margin-left:.5rem;">
+            class="w2w-inline-form">
         <!-- keep the range so the build route can re-pull if session is empty -->
         <input type="hidden" name="start" value="{{ start_date }}">
         <input type="hidden" name="end"   value="{{ end_date }}">
-        <button type="submit" class="btn-primary">
+        <button type="submit" class="w2w-button w2w-button-primary">
           {% if categorize_ready %}Rebuild Categories{% else %}Build Categories →{% endif %}
         </button>
       </form>
 
       {% if categorize_ready %}
-        <a href="{{ url_for('add_event_pull.add_event_categories_review') }}" style="text-decoration:none; margin-left:.5rem;">
-          <button type="button">View Categories</button>
-        </a>
+        <a href="{{ url_for('add_event_pull.add_event_categories_review') }}" class="w2w-button w2w-button-secondary">View categories</a>
       {% endif %}
     </div>
 
     {% for day, items in grouped.items() %}
-      <div class="source" data-day="{{ day }}">
-        <h2 style="margin-top:1rem;">{{ day }}</h2>
+      <section class="w2w-day" data-day="{{ day }}">
+        <div class="w2w-day-heading">
+          <h2>{{ friendly_date(day) }}</h2>
+          <span>{{ items|length }} event{% if items|length != 1 %}s{% endif %}</span>
+        </div>
 
-        <div class="article-list">
+        <div class="w2w-event-list">
           {% for ev in items %}
-            <div class="article"
-                 data-id="{{ ev.id }}"
-                 style="display:flex; gap:.6rem; align-items:flex-start; justify-content:space-between; padding:.5rem 0; border-bottom:1px solid #e5e7eb;">
-              <div style="flex:1; min-width:0;">
-                <div style="font-weight:600; overflow-wrap:anywhere;">
+            <article class="w2w-event" data-id="{{ ev.id }}">
+              <div class="w2w-event-content">
+                <div class="w2w-event-title">
                   {% if ev.original_link %}
-                    <a href="{{ ev.original_link }}" target="_blank" class="article-title">{{ ev.title }}</a>
+                    <a href="{{ ev.original_link }}" target="_blank" rel="noopener noreferrer">{{ ev.title }}</a>
                   {% else %}
                     {{ ev.title }}
                   {% endif %}
                 </div>
                 {% if ev.time_text %}
-                  <div style="color:#374151; font-size:.92rem; margin-top:.1rem; font-weight:600;">
-                    {{ ev.time_text }}
+                  <div class="w2w-event-time">
+                    {{ ev.time_text }}{% if ev.end_time_text %} – {{ ev.end_time_text }}{% endif %}
                   </div>
                 {% endif %}
-                <div style="color:#6b7280; font-size:.92rem; margin-top:.1rem;">
-                  {% if ev.original_link %}
-                    <span>Link:</span> <a href="{{ ev.original_link }}" target="_blank">{{ ev.original_link }}</a>
-                  {% else %}
-                    <span>No link found in description.</span>
-                  {% endif %}
-                </div>
+                {% if ev.location %}<div class="w2w-event-location">{{ ev.location }}</div>{% endif %}
               </div>
 
-              <div style="display:flex; align-items:center; gap:.4rem; white-space:nowrap;">
-                <a href="{{ url_for('add_event_pull.add_event_pull_event_ics', event_id=ev.id) }}" title="Download .ics" style="text-decoration:none;">
-                  <button type="button">ICS</button>
-                </a>
+              <div class="w2w-event-actions">
+                {% if ev.original_link %}
+                  <a href="{{ ev.original_link }}" target="_blank" rel="noopener noreferrer" class="w2w-text-link">Event details</a>
+                {% endif %}
+                <a href="{{ url_for('add_event_pull.add_event_pull_event_ics', event_id=ev.id) }}"
+                   class="w2w-text-link" title="Download calendar file (.ics)">Add to calendar</a>
                 {% if ev.addevent_url %}
-                  <a href="{{ ev.addevent_url }}" target="_blank" style="text-decoration:none;">
-                    <button type="button" class="btn-secondary">View</button>
-                  </a>
+                  <a href="{{ ev.addevent_url }}" target="_blank" rel="noopener noreferrer" class="w2w-button w2w-button-secondary w2w-button-small">View in AddEvent</a>
                 {% else %}
-                  <a href="{{ addevent_calendar_href }}" target="_blank" style="text-decoration:none;">
-                    <button type="button" class="btn-secondary">Calendar</button>
-                  </a>
+                  <a href="{{ addevent_calendar_href }}" target="_blank" rel="noopener noreferrer" class="w2w-button w2w-button-secondary w2w-button-small">View calendar</a>
                 {% endif %}
               </div>
-            </div>
+            </article>
           {% endfor %}
         </div>
-      </div>
+      </section>
     {% endfor %}
   {% elif pulled is not none and pulled|length == 0 and request.method == "POST" %}
     <p style="text-align:center; color:#6b7280; margin-top:1rem;">

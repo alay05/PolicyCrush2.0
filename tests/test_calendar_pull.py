@@ -1,9 +1,14 @@
 import unittest
+from importlib.util import find_spec
 from datetime import datetime
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
+from bs4 import BeautifulSoup
+
+from app import app
 from features import calendar_pull
-from routes.add_event_pull import _event_minimal
+from routes.add_event_pull import _event_minimal, _event_signature, _event_when_parts, _pdf_link
 
 
 class CalendarPullEventTimeTests(unittest.TestCase):
@@ -60,6 +65,115 @@ class CalendarPullEventTimeTests(unittest.TestCase):
         minimal = _event_minimal(event)
 
         self.assertEqual(minimal["date"], "2026-07-15 2:00 PM EDT")
+        self.assertEqual(minimal["date_label"], "Wed, Jul 15, 2026")
+
+    def test_shape_event_exposes_end_time_and_location(self):
+        event = calendar_pull._shape_event({
+            "id": "evt-4",
+            "title": "Policy briefing",
+            "datetime_start": "2026-07-15 14:00:00",
+            "datetime_end": "2026-07-15 15:30:00",
+            "timezone": "America/New_York",
+            "location": "Room 2123, Rayburn House Office Building",
+        })
+
+        self.assertEqual(event["end_time_text"], "3:30 PM EDT")
+        self.assertEqual(event["location"], "Room 2123, Rayburn House Office Building")
+        self.assertEqual(
+            _event_when_parts(event),
+            ("Wed, Jul 15, 2026", "2:00 PM EDT – 3:30 PM EDT"),
+        )
+
+    def test_ics_includes_event_location(self):
+        event = calendar_pull._shape_event({
+            "id": "evt-5",
+            "title": "Policy briefing",
+            "datetime_start": "2026-07-15 14:00:00",
+            "datetime_end": "2026-07-15 15:00:00",
+            "timezone": "America/New_York",
+            "location": "Room 1, Main Building",
+        })
+
+        ics = calendar_pull.make_ics_for_event(event)
+
+        self.assertIn("LOCATION:Room 1\\, Main Building", ics)
+
+
+class CalendarPullPresentationTests(unittest.TestCase):
+    def setUp(self):
+        app.config.update(TESTING=True, SECRET_KEY="calendar-pull-test")
+        self.client = app.test_client()
+
+    def test_event_list_uses_descriptive_links_instead_of_visible_urls(self):
+        event = calendar_pull._shape_event({
+            "id": "evt-presented",
+            "title": "Health policy briefing",
+            "description": "Details: https://example.com/events/a-very-long-written-out-link",
+            "datetime_start": "2026-07-15 14:00:00",
+            "datetime_end": "2026-07-15 15:30:00",
+            "timezone": "America/New_York",
+            "location": "Room 2123",
+            "event_url": "https://app.addevent.com/event/evt-presented",
+        })
+
+        with patch("routes.add_event_pull.search_events_between", return_value=[event]):
+            response = self.client.post(
+                "/add-event-pull",
+                data={"start_date": "2026-07-15", "end_date": "2026-07-15"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        soup = BeautifulSoup(response.get_data(as_text=True), "html.parser")
+        visible_text = soup.get_text(" ", strip=True)
+        self.assertIn("Event details", visible_text)
+        self.assertIn("Add to calendar", visible_text)
+        self.assertIn("2:00 PM EDT – 3:30 PM EDT", visible_text)
+        self.assertIn("Room 2123", visible_text)
+        self.assertNotIn("https://example.com/events/a-very-long-written-out-link", visible_text)
+        self.assertNotIn("ICS", visible_text)
+
+    def test_pdf_link_keeps_destination_but_shows_a_short_label(self):
+        url = "https://example.com/events/a-very-long-written-out-link?one=1&two=2"
+
+        link_markup = _pdf_link("Event details", url)
+
+        self.assertIn("Event details", link_markup)
+        self.assertNotIn(f">{url}</link>", link_markup)
+        self.assertIn("href=", link_markup)
+
+    @unittest.skipUnless(find_spec("reportlab"), "ReportLab is not installed")
+    def test_pdf_export_returns_a_valid_w2w4_document(self):
+        event = calendar_pull._shape_event({
+            "id": "evt-pdf",
+            "title": "Medicare policy briefing",
+            "description": "Details: https://example.com/events/medicare-briefing",
+            "datetime_start": "2026-07-15 14:00:00",
+            "datetime_end": "2026-07-15 15:30:00",
+            "timezone": "America/New_York",
+            "location": "Room 2123",
+        })
+        minimal = _event_minimal(event)
+
+        with self.client.session_transaction() as session:
+            session["addevent_pulled"] = [minimal]
+            session["addevent_last_range"] = {
+                "start": "2026-07-15",
+                "end": "2026-07-15",
+            }
+            session["addevent_categories_cache"] = {
+                "sig": _event_signature([minimal]),
+                "index": {"Medicare": ["evt-pdf"]},
+            }
+
+        with patch("routes.add_event_pull.search_events_between", return_value=[event]):
+            response = self.client.get(
+                "/add-event-pull/export?start=2026-07-15&end=2026-07-15"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/pdf")
+        self.assertTrue(response.data.startswith(b"%PDF-"))
+        self.assertIn("w2w4-events-20260715-20260715.pdf", response.headers["Content-Disposition"])
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{{ title or 'AddEvent Categories (PDF)' }}</title>
+  <title>{{ title or 'W2W4 Events' }}</title>
   <style>
     @page {
       size: Letter;
@@ -17,16 +17,14 @@
     thead th { text-align: left; font-size: 10pt; color:#6b7280; font-weight:700; padding:4px 6px; border-bottom:1px solid #e5e7eb; }
     td { vertical-align: top; padding: 6px 8px; background:#f9fafb; border-radius: 8px; }
     .col-date  { width: 22%; white-space: nowrap; font-weight: 700; }
-    .col-title { width: 38%; }
-    .col-links { width: 40%; }
+    .col-title { width: 78%; }
     a { color:#1d4ed8; text-decoration: none; }
-    .url { color:#6b7280; font-size: 9.5pt; word-break: break-all; }
     .row { break-inside: avoid; }
     p, .col-title { orphans: 3; widows: 3; }
   </style>
 </head>
 <body>
-  <h1>{{ title or 'AddEvent Categories' }}</h1>
+  <h1>{{ title or 'W2W4 Events' }}</h1>
 
   {% for label, items in categories.items() %}
     {% if items and items|length %}
@@ -36,8 +34,7 @@
         <thead>
           <tr>
             <th class="col-date">Date</th>
-            <th class="col-title">Title</th>
-            <th class="col-links">Links</th>
+            <th class="col-title">Event</th>
           </tr>
         </thead>
         <tbody>
@@ -54,26 +51,19 @@
                 {% endif %}
               </td>
               <td class="col-title">
-                {{ ev.title }}
-              </td>
-              <td class="col-links">
+                <strong>{{ ev.title }}</strong>
+                {% if ev.location %}<div><small>Location: {{ ev.location }}</small></div>{% endif %}
                 {% if ev.original_link %}
-                  <div><strong>Link:</strong> <a href="{{ ev.original_link }}">{{ ev.original_link }}</a></div>
-                  <div class="url">{{ ev.original_link }}</div>
+                  <a href="{{ ev.original_link }}">Event details</a>
                 {% elif ev.addevent_url %}
-                  <div><strong>Calendar:</strong> <a href="{{ ev.addevent_url }}">{{ ev.addevent_url }}</a></div>
-                  <div class="url">{{ ev.addevent_url }}</div>
-                {% else %}
-                  <div class="url"><em>No link found in description.</em></div>
+                  <a href="{{ ev.addevent_url }}">Event page</a>
                 {% endif %}
 
                 {% if include_ics %}
-                  <div style="margin-top:4px;">
-                    <strong>ICS:</strong>
-                    <a href="{{ url_for('add_event_pull.add_event_pull_event_ics', event_id=(ev.id if ev.id is defined else ev['id']), _external=True) }}">
-                      Download .ics
-                    </a>
-                  </div>
+                  <span>&nbsp;·&nbsp;</span>
+                  <a href="{{ url_for('add_event_pull.add_event_pull_event_ics', event_id=(ev.id if ev.id is defined else ev['id']), _external=True) }}">
+                    Add to calendar
+                  </a>
                 {% endif %}
               </td>
             </tr>
