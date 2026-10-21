@@ -3,6 +3,8 @@ from datetime import date, datetime
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 
+from headlines.state import clear_workflow, get_headline_status, remove_article_from_workflow
+
 
 saved_articles = Blueprint("saved_articles", __name__)
 
@@ -73,10 +75,6 @@ def get_manual_pull(tool: str) -> dict:
     return (session.get("manual_article_caches") or {}).get(tool) or {}
 
 
-def _invalidate_headlines() -> None:
-    session.pop("headline_workflow", None)
-
-
 def _saved_sort_key(article: dict):
     publication_date = article.get("date") or ""
     return bool(publication_date), publication_date, article.get("title") or ""
@@ -89,7 +87,13 @@ def saved_articles_view():
         key=_saved_sort_key,
         reverse=True,
     )
-    return render_template("saved_articles.html", articles=articles)
+    generated_count, pending_count = get_headline_status(articles)
+    return render_template(
+        "saved_articles.html",
+        articles=articles,
+        generated_count=generated_count,
+        pending_count=pending_count,
+    )
 
 
 @saved_articles.post("/saved-articles/add/<tool>")
@@ -117,8 +121,6 @@ def add_saved_articles(tool: str):
         added_count += 1
 
     session["saved_articles"] = saved
-    if added_count:
-        _invalidate_headlines()
     session.modified = True
 
     if added_count:
@@ -140,7 +142,7 @@ def remove_saved_article(article_id: str):
     remaining = [article for article in saved if article.get("id") != article_id]
     session["saved_articles"] = remaining
     if len(remaining) < len(saved):
-        _invalidate_headlines()
+        remove_article_from_workflow(article_id)
     session.modified = True
 
     if len(remaining) < len(saved):
@@ -153,7 +155,7 @@ def remove_saved_article(article_id: str):
 @saved_articles.post("/saved-articles/clear")
 def clear_saved_articles():
     session["saved_articles"] = []
-    _invalidate_headlines()
+    clear_workflow()
     session.modified = True
     flash("Saved articles cleared.", "success")
     return redirect(url_for("saved_articles.saved_articles_view"))

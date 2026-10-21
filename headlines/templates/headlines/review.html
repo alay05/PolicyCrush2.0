@@ -44,8 +44,14 @@
 
   <div class="workflow-actions">
     <a href="{{ url_for('saved_articles.saved_articles_view') }}"><button type="button">← Saved Articles</button></a>
-    <form method="POST" action="{{ url_for('headlines.generate') }}" class="headline-regenerate-form">
-      <button type="submit" class="btn-primary">Regenerate Headlines</button>
+    {% if pending_count %}
+      <form method="POST" action="{{ url_for('headlines.generate') }}" class="headline-generate-form">
+        <button type="submit" class="btn-primary">Generate {{ pending_count }} New Headline{% if pending_count != 1 %}s{% endif %}</button>
+      </form>
+    {% endif %}
+    <form method="POST" action="{{ url_for('headlines.generate') }}" class="headline-generate-form">
+      <input type="hidden" name="mode" value="all">
+      <button type="submit">Regenerate All</button>
     </form>
   </div>
 
@@ -163,10 +169,12 @@
       }
     }
 
-    document.querySelector('.headline-regenerate-form')?.addEventListener('submit', (event) => {
-      const button = event.currentTarget.querySelector('button');
-      button.disabled = true;
-      button.textContent = 'Generating…';
+    document.querySelectorAll('.headline-generate-form').forEach((form) => {
+      form.addEventListener('submit', (event) => {
+        const button = event.currentTarget.querySelector('button');
+        button.disabled = true;
+        button.textContent = 'Generating…';
+      });
     });
   </script>
 </body>

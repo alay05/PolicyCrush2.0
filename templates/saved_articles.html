@@ -38,9 +38,16 @@
       <form method="POST" action="{{ url_for('saved_articles.clear_saved_articles') }}" onsubmit="return confirm('Clear all saved articles?');">
         <button type="submit" class="remove-article-btn">Clear Saved</button>
       </form>
-      <form method="POST" action="{{ url_for('headlines.generate') }}" class="headline-generate-form">
-        <button type="submit" class="btn-primary">Generate Headlines →</button>
-      </form>
+      {% if generated_count %}
+        <a href="{{ url_for('headlines.review') }}"><button type="button">View Generated Headlines</button></a>
+      {% endif %}
+      {% if pending_count %}
+        <form method="POST" action="{{ url_for('headlines.generate') }}" class="headline-generate-form">
+          <button type="submit" class="btn-primary">
+            {% if generated_count %}Generate {{ pending_count }} New Headline{% if pending_count != 1 %}s{% endif %}{% else %}Generate Headlines{% endif %} →
+          </button>
+        </form>
+      {% endif %}
     </div>
   {% else %}
     <div class="empty-state">
