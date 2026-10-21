@@ -19,12 +19,11 @@ def generate():
 
     saved_by_id = {str(article.get("id")): article for article in saved}
     workflow = get_current_workflow(saved)
-    regenerate_all = request.form.get("mode") == "all"
     existing_ids = set(workflow["items"]) if workflow else set()
     articles_to_generate = [
         article
         for article in saved
-        if regenerate_all or str(article.get("id")) not in existing_ids
+        if str(article.get("id")) not in existing_ids
     ]
 
     if not articles_to_generate:
@@ -41,10 +40,6 @@ def generate():
         category: list((workflow["index"] if workflow else {}).get(category, []))
         for category in ALL_CATEGORIES
     }
-
-    generated_ids = {str(result["id"]) for result in generated}
-    for category in index:
-        index[category] = [article_id for article_id in index[category] if article_id not in generated_ids]
 
     for result in generated:
         article_id = str(result["id"])

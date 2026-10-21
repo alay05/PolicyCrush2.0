@@ -117,6 +117,8 @@ class HeadlineWorkflowTests(unittest.TestCase):
         self.assertIn(b"CMS Updates Medicare Policy", response.data)
         self.assertIn(b"Original: Original Medicare title", response.data)
         self.assertIn(b"Pharmaceuticals and Medical Devices", response.data)
+        self.assertNotIn(b"Regenerate", response.data)
+        self.assertNotIn(b"Save PDF", response.data)
 
         saved_page = self.client.get("/saved-articles")
         self.assertIn(b"View Generated Headlines", saved_page.data)
@@ -205,35 +207,6 @@ class HeadlineWorkflowTests(unittest.TestCase):
             )
             self.assertEqual(workflow["index"]["Health Insurance"], [self.article_one["id"]])
             self.assertEqual(workflow["index"]["Medicaid"], [new_article["id"]])
-
-    def test_regenerate_all_replaces_every_generated_headline(self):
-        self._generate()
-        regenerated = [
-            {
-                "id": self.article_one["id"],
-                "headline": "Regenerated Medicare Headline",
-                "category": "Medicare",
-            },
-            {
-                "id": self.article_two["id"],
-                "headline": "Regenerated Drug Headline",
-                "category": "Health Tech",
-            },
-        ]
-
-        with patch(
-            "headlines.routes.generate_headline_records", return_value=regenerated
-        ) as generate_mock:
-            self.client.post("/headlines/generate", data={"mode": "all"})
-
-        self.assertEqual(len(generate_mock.call_args.args[0]), 2)
-        with self.client.session_transaction() as current_session:
-            workflow = current_session["headline_workflow"]
-            self.assertEqual(
-                workflow["items"][self.article_one["id"]]["headline"],
-                "Regenerated Medicare Headline",
-            )
-            self.assertEqual(workflow["index"]["Health Tech"], [self.article_two["id"]])
 
     def test_clear_saved_also_clears_generated_workflow(self):
         self._generate()

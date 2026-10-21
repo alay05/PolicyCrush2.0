@@ -49,10 +49,6 @@
         <button type="submit" class="btn-primary">Generate {{ pending_count }} New Headline{% if pending_count != 1 %}s{% endif %}</button>
       </form>
     {% endif %}
-    <form method="POST" action="{{ url_for('headlines.generate') }}" class="headline-generate-form">
-      <input type="hidden" name="mode" value="all">
-      <button type="submit">Regenerate All</button>
-    </form>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js" crossorigin="anonymous"></script>
