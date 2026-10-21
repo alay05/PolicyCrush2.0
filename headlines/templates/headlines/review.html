@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="{{ asset_url('favicon.svg') }}">
 </head>
 <body>
-  <a href="{{ url_for('saved_articles.saved_articles_view') }}" class="home-button">← Saved Articles</a>
+  <a href="{{ url_for('home') }}" class="home-button">← Home</a>
   <h1>Generated Headlines</h1>
   {% if built_at %}
     <p class="headline-built-at">Generated {{ built_at | pretty_date(true) }}</p>
