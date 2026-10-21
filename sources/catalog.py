@@ -3,6 +3,7 @@ from sources.news.crs import fetch_crs_articles
 from sources.news.congress import fetch_congress_articles
 from sources.news.fda import fetch_fda_articles
 from sources.news.fed_reg import fetch_federal_register_articles
+from sources.news.nih import fetch_nih_articles
 from sources.news.whitehouse import fetch_whitehouse_articles
 from sources.news.omb import fetch_omb_articles
 
@@ -51,6 +52,7 @@ NEWS_SOURCES = {
     "Congress": fetch_congress_articles,
     "FDA": fetch_fda_articles,
     "Federal Register Public Inspection Desk": fetch_federal_register_articles,
+    "NIH": fetch_nih_articles,
     "OMB First Glance Rulemaking": fetch_omb_articles,
     "White House": fetch_whitehouse_articles,
 }
