@@ -7,34 +7,29 @@
   <title>AddEvent - Categories</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}">
 </head>
-<body class="w2w-page">
-  <!-- Top-left goes HOME -->
+<body>
   <a href="/" class="home-button">← Home</a>
-  <header class="w2w-header">
-    <p class="w2w-eyebrow">W2W4</p>
-    <h1>Event Categories</h1>
-    <p class="w2w-subtitle">Drag events between sections, then export the finalized list.</p>
-  </header>
+  <h1>AddEvent Categories</h1>
   {% if built_at %}
-    <p class="w2w-built-at">Last organized {{ built_at }}</p>
+    <p class="w2w-built-at"><small>Built: {{ built_at }}</small></p>
   {% endif %}
 
   {% if categories %}
     {% for label, items in categories.items() %}
-      <section class="source w2w-category" data-category="{{ label }}">
-        <div class="w2w-day-heading">
-          <h2>{{ label }}</h2>
-          <span>{{ items|length }} event{% if items|length != 1 %}s{% endif %}</span>
-        </div>
+      <div class="source" data-category="{{ label }}">
+        <h2 class="w2w-section-heading">
+          <span>{{ label }}</span>
+          <small>{{ items|length }} event{% if items|length != 1 %}s{% endif %}</small>
+        </h2>
 
         <div class="article-list">
           {% for a in items %}
-            <article class="w2w-category-event" data-id="{{ a._ref }}">
+            <div class="article w2w-category-event" data-id="{{ a._ref }}">
               <div class="w2w-drag-handle" aria-label="Drag to move event" title="Drag to move">☰</div>
 
-              <div class="w2w-category-event-content">
+              <div class="w2w-event-main">
                 {% if a.date_label or a.date %}
-                  <div class="w2w-category-date">
+                  <div class="w2w-event-time">
                     {{ a.date_label or a.date }}{% if a.time_label %} · {{ a.time_label }}{% endif %}
                   </div>
                 {% endif %}
@@ -43,31 +38,36 @@
                 {% else %}
                   {{ a.title }}
                 {% endif %}
-                {% if a.location %}<div class="w2w-event-location">{{ a.location }}</div>{% endif %}
+                {% if a.location %}
+                  <div class="w2w-event-location">{{ a.location }}</div>
+                {% endif %}
               </div>
-            </article>
+            </div>
           {% endfor %}
         </div>
-      </section>
+      </div>
+      <div style="margin-top: 1.5rem;"></div>
     {% endfor %}
   {% else %}
     <p><em>No categories available.</em></p>
   {% endif %}
 
-  <!-- Bottom button row like your other pages -->
-  <div class="w2w-toolbar w2w-footer-actions">
-    <a href="{{ url_for('add_event_pull.add_event_pull_home') }}" class="w2w-button w2w-button-secondary">← Back to range</a>
+  <div style="text-align:center; margin-top: 1.25rem;">
+    <a href="{{ url_for('add_event_pull.add_event_pull_home') }}" style="text-decoration:none;">
+      <button type="button">← Back to Range</button>
+    </a>
 
     {% if last_range and last_range.get('start') and last_range.get('end') %}
-      <a class="export-btn w2w-button w2w-button-primary"
+      <a class="export-btn"
          href="{{ url_for('add_event_pull.add_event_pull_export_pdf',
                           start=last_range.get('start'),
                           end=last_range.get('end')) }}"
-         >Export PDF</a>
+         style="text-decoration:none; margin-left:.5rem;">
+        <button type="button">Export PDF</button>
+      </a>
     {% endif %}
   </div>
 
-  <!-- SortableJS (drag & drop) -->
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js" crossorigin="anonymous"></script>
   <script>
     const lists = Array.from(document.querySelectorAll('.source .article-list'));
@@ -107,7 +107,6 @@
         if (!data.ok) throw new Error(data.error || "Move failed");
       } catch (err) {
         console.error(err);
-        // revert
         if (fromList && item) {
           if (evt.oldIndex >= fromList.children.length) fromList.appendChild(item);
           else fromList.insertBefore(item, fromList.children[evt.oldIndex]);
