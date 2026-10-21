@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Generated Headlines</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ asset_url('favicon.svg') }}">
+</head>
+<body>
+  <a href="{{ url_for('saved_articles.saved_articles_view') }}" class="home-button">← Saved Articles</a>
+  <h1>Generated Headlines</h1>
+  {% if built_at %}
+    <p class="headline-built-at">Generated {{ built_at | pretty_date(true) }}</p>
+  {% endif %}
+
+  {% for label, items in categories.items() %}
+    <section class="source headline-category" data-category="{{ label }}">
+      <h2>{{ label }}</h2>
+      <div class="article-list headline-article-list">
+        {% for article in items %}
+          <article class="article headline-card" data-id="{{ article.id }}">
+            <div class="headline-drag-handle" title="Move article">☰</div>
+            <div class="headline-card-content">
+              <div class="headline-display-row">
+                <a class="article-title" href="{{ article.url }}" target="_blank">{{ article.headline }}</a>
+                <button type="button" class="edit-title-btn" aria-label="Edit headline" title="Edit headline">✎</button>
+              </div>
+              <div class="headline-editor" hidden>
+                <input class="edit-input" type="text" value="{{ article.headline }}" maxlength="500">
+                <button type="button" class="save-title-btn">Save</button>
+                <button type="button" class="cancel-title-btn">Cancel</button>
+              </div>
+              <p class="headline-original">Original: {{ article.original_title }}</p>
+              <p class="headline-meta">
+                {{ article.date | pretty_date(article.section == 'hearing') }} · {{ article.source_label }}
+              </p>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+
+  <div class="workflow-actions">
+    <a href="{{ url_for('saved_articles.saved_articles_view') }}"><button type="button">← Saved Articles</button></a>
+    <form method="POST" action="{{ url_for('headlines.generate') }}" class="headline-regenerate-form">
+      <button type="submit" class="btn-primary">Regenerate Headlines</button>
+    </form>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js" crossorigin="anonymous"></script>
+  <script>
+    document.querySelectorAll('.headline-article-list').forEach((list) => {
+      new Sortable(list, {
+        group: 'headline-categories',
+        animation: 150,
+        handle: '.headline-drag-handle',
+        ghostClass: 'dragging',
+        filter: 'a, button, input',
+        preventOnFilter: false,
+        onAdd: persistMove,
+        onUpdate: persistMove,
+      });
+    });
+
+    async function persistMove(event) {
+      const item = event.item;
+      const fromCategory = event.from.closest('.headline-category')?.dataset.category || '';
+      const toCategory = event.to.closest('.headline-category')?.dataset.category || '';
+      const newIndex = Array.prototype.indexOf.call(event.to.children, item);
+
+      try {
+        const response = await fetch("{{ url_for('headlines.move') }}", {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            id: item.dataset.id,
+            from_category: fromCategory,
+            to_category: toCategory,
+            new_index: newIndex,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || 'Move failed');
+      } catch (error) {
+        if (event.oldIndex >= event.from.children.length) event.from.appendChild(item);
+        else event.from.insertBefore(item, event.from.children[event.oldIndex]);
+        alert("Couldn't save that move. Please try again.");
+      }
+    }
+
+    document.addEventListener('click', async (event) => {
+      const editButton = event.target.closest('.edit-title-btn');
+      if (editButton) {
+        const card = editButton.closest('.headline-card');
+        setEditing(card, true);
+        return;
+      }
+
+      const cancelButton = event.target.closest('.cancel-title-btn');
+      if (cancelButton) {
+        setEditing(cancelButton.closest('.headline-card'), false, true);
+        return;
+      }
+
+      const saveButton = event.target.closest('.save-title-btn');
+      if (saveButton) await saveHeadline(saveButton.closest('.headline-card'));
+    });
+
+    document.addEventListener('keydown', async (event) => {
+      if (!event.target.classList.contains('edit-input')) return;
+      const card = event.target.closest('.headline-card');
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        await saveHeadline(card);
+      } else if (event.key === 'Escape') {
+        setEditing(card, false, true);
+      }
+    });
+
+    function setEditing(card, editing, restore = false) {
+      const display = card.querySelector('.headline-display-row');
+      const editor = card.querySelector('.headline-editor');
+      const input = card.querySelector('.edit-input');
+      const title = card.querySelector('.article-title');
+      if (restore) input.value = title.textContent.trim();
+      display.hidden = editing;
+      editor.hidden = !editing;
+      if (editing) {
+        input.value = title.textContent.trim();
+        input.focus();
+        input.select();
+      }
+    }
+
+    async function saveHeadline(card) {
+      const input = card.querySelector('.edit-input');
+      const title = card.querySelector('.article-title');
+      const saveButton = card.querySelector('.save-title-btn');
+      const headline = input.value.trim();
+      if (!headline) return;
+      if (headline === title.textContent.trim()) {
+        setEditing(card, false);
+        return;
+      }
+
+      saveButton.disabled = true;
+      try {
+        const response = await fetch("{{ url_for('headlines.rename') }}", {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({id: card.dataset.id, headline}),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || 'Save failed');
+        title.textContent = headline;
+        setEditing(card, false);
+      } catch (error) {
+        alert(`Couldn't save headline: ${error.message}`);
+      } finally {
+        saveButton.disabled = false;
+      }
+    }
+
+    document.querySelector('.headline-regenerate-form')?.addEventListener('submit', (event) => {
+      const button = event.currentTarget.querySelector('button');
+      button.disabled = true;
+      button.textContent = 'Generating…';
+    });
+  </script>
+</body>
+</html>

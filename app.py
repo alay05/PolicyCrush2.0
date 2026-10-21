@@ -8,6 +8,7 @@ from routes.house import house
 from routes.saved_articles import saved_articles
 from routes.add_event import add_event
 from routes.add_event_pull import add_event_pull
+from headlines.routes import headlines
 
 from production.routes import production
 
@@ -35,6 +36,7 @@ app.register_blueprint(senate)
 app.register_blueprint(saved_articles)
 app.register_blueprint(add_event)
 app.register_blueprint(add_event_pull)
+app.register_blueprint(headlines, url_prefix="/headlines")
 
 app.register_blueprint(production, url_prefix="/production")
 

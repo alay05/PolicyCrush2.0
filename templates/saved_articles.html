@@ -34,11 +34,26 @@
         </div>
       {% endfor %}
     </div>
+    <div class="workflow-actions">
+      <form method="POST" action="{{ url_for('saved_articles.clear_saved_articles') }}" onsubmit="return confirm('Clear all saved articles?');">
+        <button type="submit" class="remove-article-btn">Clear Saved</button>
+      </form>
+      <form method="POST" action="{{ url_for('headlines.generate') }}" class="headline-generate-form">
+        <button type="submit" class="btn-primary">Generate Headlines →</button>
+      </form>
+    </div>
   {% else %}
     <div class="empty-state">
       <p>No articles have been saved yet.</p>
       <p>Select articles after pulling them from Daily, House, or Senate.</p>
     </div>
   {% endif %}
+  <script>
+    document.querySelector('.headline-generate-form')?.addEventListener('submit', (event) => {
+      const button = event.currentTarget.querySelector('button');
+      button.disabled = true;
+      button.textContent = 'Generating…';
+    });
+  </script>
 </body>
 </html>

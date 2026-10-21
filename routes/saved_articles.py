@@ -73,6 +73,10 @@ def get_manual_pull(tool: str) -> dict:
     return (session.get("manual_article_caches") or {}).get(tool) or {}
 
 
+def _invalidate_headlines() -> None:
+    session.pop("headline_workflow", None)
+
+
 def _saved_sort_key(article: dict):
     publication_date = article.get("date") or ""
     return bool(publication_date), publication_date, article.get("title") or ""
@@ -113,6 +117,8 @@ def add_saved_articles(tool: str):
         added_count += 1
 
     session["saved_articles"] = saved
+    if added_count:
+        _invalidate_headlines()
     session.modified = True
 
     if added_count:
@@ -133,10 +139,21 @@ def remove_saved_article(article_id: str):
     saved = list(session.get("saved_articles") or [])
     remaining = [article for article in saved if article.get("id") != article_id]
     session["saved_articles"] = remaining
+    if len(remaining) < len(saved):
+        _invalidate_headlines()
     session.modified = True
 
     if len(remaining) < len(saved):
         flash("Article removed.", "success")
     else:
         flash("That article was not found.", "info")
+    return redirect(url_for("saved_articles.saved_articles_view"))
+
+
+@saved_articles.post("/saved-articles/clear")
+def clear_saved_articles():
+    session["saved_articles"] = []
+    _invalidate_headlines()
+    session.modified = True
+    flash("Saved articles cleared.", "success")
     return redirect(url_for("saved_articles.saved_articles_view"))

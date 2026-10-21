@@ -38,8 +38,9 @@ Before deploying to Vercel:
 
 - `FLASK_SECRET_KEY`: required outside local development.
 - `BLOB_READ_WRITE_TOKEN`: required on Vercel for durable production workflow sessions.
-- `OPENAI_API_KEY`: enables article suggestion classification.
+- `OPENAI_API_KEY`: enables article suggestion classification, categorization, and headline generation.
 - `OPENAI_MODEL`: optional override for the classifier model. Default is `gpt-3.5-turbo` to preserve current behavior.
+- `HEADLINE_OPENAI_MODEL`: optional model used for structured headline generation. Defaults to `gpt-4o-mini`.
 - `SESSION_TYPE`: defaults to `filesystem`.
 - `SESSION_FILE_DIR`: optional filesystem session directory override.
 - `SCRAPER_BROWSER_PROVIDER`: `auto`, `requests`, `playwright`, or `selenium`.
