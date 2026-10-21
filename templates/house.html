@@ -34,59 +34,69 @@
     <p style="color: red;">{{ error }}</p>
   {% endif %}
 
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <p class="status-message {{ category }}">{{ message }}</p>
+    {% endfor %}
+  {% endwith %}
+
   {% if committees %}
-    {% for committee, data in committees.items() %}
-      <div class="committee">
-        <!-- no link -->
-        <h2>{{ committee }}</h2> 
+    <form method="POST" action="{{ url_for('saved_articles.add_saved_articles', tool='house') }}" class="selection-form">
+      {% for committee, data in committees.items() %}
+        <div class="committee">
+          <h2>{{ committee }}</h2>
 
-        <div class="columns">
-          <div class="column">
-            <h3>Majority Press</h3>
-            {% if data.majority %}
-              {% for a in data.majority %}
-                <div class="article" style="display: flex; justify-content: space-between; align-items: center;">
-                  <div>
-                    <span class="date">{{ a.date | pretty_date }}</span> - 
-                    <a href="{{ a.url }}" target="_blank">{{ a.title }}</a>
+          <div class="columns">
+            <div class="column">
+              <h3>Majority Press</h3>
+              {% if data.majority %}
+                {% for a in data.majority %}
+                  <div class="article" style="display: flex; justify-content: space-between; align-items: center;">
+                    <label class="article-check" style="flex: 1;">
+                      <input type="checkbox" name="selected" value="{{ a.id }}">
+                      <span><span class="date">{{ a.date | pretty_date }}</span> - <a href="{{ a.url }}" target="_blank">{{ a.title }}</a></span>
+                    </label>
+                    {% if a.suggestion %}
+                      <span class="suggestion-badge {{ a.suggestion | lower }} ml-5">{{ a.suggestion }}</span>
+                    {% endif %}
                   </div>
-                  {% if a.suggestion %}
-                    <span class="suggestion-badge {{ a.suggestion | lower }} ml-5">{{ a.suggestion }}</span>
-                  {% endif %}
-                </div>
-              {% endfor %}
-            {% else %}
-              <p><em>No majority articles found.</em></p>
-            {% endif %}
-          </div>
+                {% endfor %}
+              {% else %}
+                <p><em>No majority articles found.</em></p>
+              {% endif %}
+            </div>
 
-          <div class="column">
-            <h3>Minority Press</h3>
-            {% if data.minority %}
-              {% for a in data.minority %}
-                <div class="article" style="display: flex; justify-content: space-between; align-items: center;">
-                  <div>
-                    <span class="date">{{ a.date | pretty_date }}</span> - 
-                    <a href="{{ a.url }}" target="_blank">{{ a.title }}</a>
+            <div class="column">
+              <h3>Minority Press</h3>
+              {% if data.minority %}
+                {% for a in data.minority %}
+                  <div class="article" style="display: flex; justify-content: space-between; align-items: center;">
+                    <label class="article-check" style="flex: 1;">
+                      <input type="checkbox" name="selected" value="{{ a.id }}">
+                      <span><span class="date">{{ a.date | pretty_date }}</span> - <a href="{{ a.url }}" target="_blank">{{ a.title }}</a></span>
+                    </label>
+                    {% if a.suggestion %}
+                      <span class="suggestion-badge {{ a.suggestion | lower }} ml-5">{{ a.suggestion }}</span>
+                    {% endif %}
                   </div>
-                  {% if a.suggestion %}
-                    <span class="suggestion-badge {{ a.suggestion | lower }} ml-5">{{ a.suggestion }}</span>
-                  {% endif %}
-                </div>
-              {% endfor %}
-            {% else %}
-              <p><em>No minority articles found.</em></p>
-            {% endif %}
+                {% endfor %}
+              {% else %}
+                <p><em>No minority articles found.</em></p>
+              {% endif %}
+            </div>
           </div>
         </div>
+      {% endfor %}
+      <div class="save-selection-actions">
+        <button type="submit" class="btn-primary">Save Selected</button>
       </div>
-    {% endfor %}
+    </form>
   {% endif %}
 
   <script>
     const dateInput = document.getElementById("start_date");
     const submitBtn = document.getElementById("submit-btn");
-    const form = document.querySelector("form");
+    const form = document.querySelector("form:not(.selection-form)");
     const loadingBar = document.getElementById("loading-bar-container");
 
     function toggleSubmit() {

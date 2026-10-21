@@ -34,32 +34,43 @@
     <p style="color: red;">{{ error }}</p>
   {% endif %}
 
-  {% if articles %}
-    {% for source, data in articles.items() %}
-      <div class="source">
-        <h2><a href="{{ data['url'] }}" target="_blank">{{ source }}</a></h2>
-        {% if data["items"] %}
-          {% for a in data["items"] %}
-            <div class="article" style="display: flex; justify-content: space-between; align-items: center;">
-              <div>
-                <span class="date">{{ a.date | pretty_date }}</span> - 
-                <a href="{{ a.url }}" target="_blank">{{ a.title }}</a>
-              </div>
-              {% if a.suggestion %}
-                <span class="suggestion-badge {{ a.suggestion | lower }} ml-5">{{ a.suggestion }}</span>
-              {% endif %}
-            </div>
-          {% endfor %}
-        {% else %}
-          <p><em>No articles found.</em></p>
-        {% endif %}
-      </div>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <p class="status-message {{ category }}">{{ message }}</p>
     {% endfor %}
+  {% endwith %}
+
+  {% if articles %}
+    <form method="POST" action="{{ url_for('saved_articles.add_saved_articles', tool='news') }}" class="selection-form">
+      {% for source, data in articles.items() %}
+        <div class="source">
+          <h2><a href="{{ data['url'] }}" target="_blank">{{ source }}</a></h2>
+          {% if data["items"] %}
+            {% for a in data["items"] %}
+              <div class="article" style="display: flex; justify-content: space-between; align-items: center;">
+                <label class="article-check" style="flex: 1;">
+                  <input type="checkbox" name="selected" value="{{ a.id }}">
+                  <span><span class="date">{{ a.date | pretty_date }}</span> - <a href="{{ a.url }}" target="_blank">{{ a.title }}</a></span>
+                </label>
+                {% if a.suggestion %}
+                  <span class="suggestion-badge {{ a.suggestion | lower }} ml-5">{{ a.suggestion }}</span>
+                {% endif %}
+              </div>
+            {% endfor %}
+          {% else %}
+            <p><em>No articles found.</em></p>
+          {% endif %}
+        </div>
+      {% endfor %}
+      <div class="save-selection-actions">
+        <button type="submit" class="btn-primary">Save Selected</button>
+      </div>
+    </form>
   {% endif %}
   <script>
     const dateInput = document.getElementById("start_date");
     const submitBtn = document.querySelector("button[type='submit']");
-    const form = document.querySelector("form");
+    const form = document.querySelector("form:not(.selection-form)");
     const loadingBar = document.getElementById("loading-bar-container");
 
     function toggleButton() {
