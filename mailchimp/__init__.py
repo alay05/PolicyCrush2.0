@@ -1,0 +1,1 @@
+"""Mailchimp draft campaign support."""

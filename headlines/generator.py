@@ -25,8 +25,23 @@ def load_style_examples() -> list[str]:
     ]
 
 
-def _response_schema(allowed_categories: list[str] | None = None) -> dict:
+def _response_schema(
+    allowed_categories: list[str] | None = None,
+    include_link_text: bool = False,
+) -> dict:
     allowed_categories = allowed_categories or ALL_CATEGORIES
+    properties = {
+        "id": {"type": "string"},
+        "headline": {"type": "string"},
+        "category": {
+            "type": "string",
+            "enum": allowed_categories,
+        },
+    }
+    required = ["id", "headline", "category"]
+    if include_link_text:
+        properties["link_text"] = {"type": "string"}
+        required.append("link_text")
     return {
         "type": "object",
         "properties": {
@@ -34,15 +49,8 @@ def _response_schema(allowed_categories: list[str] | None = None) -> dict:
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "properties": {
-                        "id": {"type": "string"},
-                        "headline": {"type": "string"},
-                        "category": {
-                            "type": "string",
-                            "enum": allowed_categories,
-                        },
-                    },
-                    "required": ["id", "headline", "category"],
+                    "properties": properties,
+                    "required": required,
                     "additionalProperties": False,
                 },
             }
@@ -60,10 +68,14 @@ def _normalize_results(articles: list[dict], generated: list[dict]) -> list[dict
         article_id = str(result.get("id") or "").strip()
         headline = str(result.get("headline") or "").strip()
         category = str(result.get("category") or "").strip()
+        link_text = str(result.get("link_text") or "").strip()
+        if not link_text or link_text not in headline:
+            link_text = headline
         if article_id in source_by_id and headline and article_id not in generated_by_id:
             generated_by_id[article_id] = {
                 "id": article_id,
                 "headline": headline,
+                "link_text": link_text,
                 "category": category,
             }
 
@@ -109,7 +121,10 @@ def generate_headline_records(articles: list[dict]) -> list[dict]:
         "Preserve factual meaning, names, party/state/district identifiers, bill numbers, agencies, "
         "program names, dollar amounts, and other material specifics. Do not invent facts. "
         "Use title case and return each input ID exactly once. Assign exactly one allowed category. "
-        "Use Events only when is_hearing is true, and always use Events for those hearings."
+        "Use Events only when is_hearing is true, and always use Events for those hearings. "
+        "For link_text, return the exact contiguous action word or short action phrase within the "
+        "generated headline that should link to the source, such as Announces, Releases, or "
+        "Issues Guidance."
     )
     prompt = (
         "STYLE EXAMPLES:\n"
@@ -132,7 +147,7 @@ def generate_headline_records(articles: list[dict]) -> list[dict]:
                     "type": "json_schema",
                     "name": "generated_headlines",
                     "strict": True,
-                    "schema": _response_schema(),
+                    "schema": _response_schema(include_link_text=True),
                 }
             },
         )

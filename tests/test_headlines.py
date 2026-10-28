@@ -46,11 +46,13 @@ class HeadlineGeneratorTests(unittest.TestCase):
                 {
                     "id": articles[0]["id"],
                     "headline": "CMS Announces Policy Update",
+                    "link_text": "Announces",
                     "category": "Medicare",
                 },
                 {
                     "id": articles[1]["id"],
                     "headline": "Senate Finance Committee Holds Hearing",
+                    "link_text": "Holds",
                     "category": "Quality and Innovation",
                 },
             ]
@@ -65,9 +67,15 @@ class HeadlineGeneratorTests(unittest.TestCase):
             generated = generate_headline_records(articles)
 
         self.assertEqual(generated[0]["category"], "Medicare")
+        self.assertEqual(generated[0]["link_text"], "Announces")
         self.assertEqual(generated[1]["category"], "Events")
         request_args = client.responses.create.call_args.kwargs
         self.assertEqual(request_args["text"]["format"]["type"], "json_schema")
+        article_schema = request_args["text"]["format"]["schema"]["properties"][
+            "articles"
+        ]["items"]
+        self.assertIn("link_text", article_schema["properties"])
+        self.assertIn("link_text", article_schema["required"])
         self.assertFalse(request_args["store"])
 
     def test_w2w_headlines_are_simple_categorized_and_include_exact_schedule(self):
@@ -196,6 +204,10 @@ class HeadlineWorkflowTests(unittest.TestCase):
             workflow = current_session["headline_workflow"]
             self.assertEqual(
                 workflow["items"][self.article_one["id"]]["headline"],
+                "Edited Medicare Headline",
+            )
+            self.assertEqual(
+                workflow["items"][self.article_one["id"]]["link_text"],
                 "Edited Medicare Headline",
             )
             self.assertNotIn(self.article_one["id"], workflow["index"]["Medicare"])

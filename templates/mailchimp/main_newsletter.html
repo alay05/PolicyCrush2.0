@@ -1,0 +1,192 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="en-us">
+<head>
+  <meta charset="UTF-8">
+  <style type="text/css">
+    table#policycrush-email {
+      width: 600px;
+      max-width: 600px;
+      margin: auto;
+    }
+    table#policycrush-email tr.header td {
+      background-color: #fff;
+      text-align: center;
+      padding: 15px 0;
+    }
+    table#policycrush-email tr.body h1 {
+      color: #d51f50 !important;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 20px;
+      font-weight: bold;
+      line-height: normal;
+      text-align: left;
+    }
+    table#policycrush-email tr.body td {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 16px;
+      line-height: 24px;
+      color: #211e1e;
+      background-color: #fff;
+      padding: 0 20px 20px;
+      text-align: left;
+    }
+    table#policycrush-email tr.body a,
+    table#policycrush-email tr.body a:hover,
+    table#policycrush-email tr.body a:active {
+      color: #0d92da;
+      text-decoration: none;
+    }
+    table#policycrush-email tr.body a:visited {
+      color: #00669d;
+      text-decoration: none;
+    }
+    table#policycrush-email tr.greeting td {
+      background-color: #211e1e;
+      text-align: center;
+      font-family: Arial, Helvetica, sans-serif;
+      padding: 20px;
+      font-size: 18px;
+      font-weight: normal;
+      line-height: normal;
+      color: #fff;
+    }
+    table#policycrush-email tr.greeting td h2 {
+      font-size: 20px;
+      line-height: normal;
+      font-weight: normal;
+      color: #fff;
+    }
+    table#policycrush-email tr.footnote td {
+      background-color: #f1f1f1;
+      color: #211e1e;
+      font-size: 22px;
+      font-family: Arial, Helvetica, sans-serif;
+      text-align: center;
+      padding: 20px 20px 30px;
+    }
+    table#policycrush-email tr.footer td {
+      font-size: 12px;
+      background-color: #dfdfdf;
+      color: #211e1e;
+      text-align: center;
+      font-family: Arial, Helvetica, sans-serif;
+      padding: 20px;
+    }
+    table#policycrush-email tbody,
+    table#policycrush-email tr,
+    table#policycrush-email td {
+      display: block !important;
+    }
+    @media screen and (max-width: 599px) {
+      body { padding: 0 !important; }
+      table#policycrush-email {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+      }
+      table#policycrush-email tr.greeting td h2 { font-size: 16px !important; }
+      table#policycrush-email tr.greeting td { font-size: 12px !important; }
+      table#policycrush-email img {
+        max-width: 100% !important;
+        width: auto;
+        height: auto;
+      }
+      a#policycrush-logo img {
+        width: 100% !important;
+        min-width: 300px !important;
+      }
+      table#policycrush-email tr.greeting td { padding: 2px !important; }
+      table#policycrush-email tr.body td {
+        font-size: 20px !important;
+        line-height: normal !important;
+      }
+    }
+  </style>
+</head>
+<body style="background-color:#fff;font-size:12px;font-family:Arial,Helvetica,sans-serif;color:#000;">
+  <center>
+    <table id="policycrush-email" align="center" style="width:600px;max-width:600px;margin:auto;">
+      <tbody>
+        <tr class="header">
+          <td colspan="2" style="background-color:#fff;text-align:center;padding:15px 0;">
+            <a id="policycrush-logo" href="http://policycrush.com/">
+              <img src="https://mcusercontent.com/376b597042727023b90a0d75c/images/5006abcd-2000-4934-bfd2-919dc85b5a7f.gif" alt="PolicyCrush" border="0" style="margin:0;padding:0;">
+            </a>
+          </td>
+        </tr>
+      </tbody>
+      <tbody>
+        <tr class="greeting">
+          <td colspan="2" style="background-color:#211e1e;text-align:center;font-family:Arial,Helvetica,sans-serif;padding:20px;font-size:18px;font-weight:normal;line-height:normal;color:#fff;">
+            <h2 style="margin:-6px;font-size:20px;line-height:normal;font-weight:normal;color:#fff;">
+              <strong>Your Must-Knows Today Are...</strong>
+            </h2>
+          </td>
+        </tr>
+        <tr class="spacer" style="height:10px;"><td colspan="2"></td></tr>
+      </tbody>
+      <tbody>
+        <tr class="body">
+          <td colspan="2" style="font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;color:#211e1e;background-color:#fff;padding:0 20px 20px;text-align:left;">
+            {% for section in sections %}
+              <h1 style="font-family:Arial,Helvetica,sans-serif;font-size:20px;font-weight:bold;line-height:normal;text-align:left;color:#d51f50 !important;">{{ section.label }}</h1>
+                {% for article in section["items"] %}
+                <p>{% if article.event_time %}<strong>{{ article.event_time }}</strong> - {% endif %}{{ article.headline_html }}</p>
+              {% endfor %}
+            {% endfor %}
+          </td>
+        </tr>
+        <tr class="spacer" style="height:10px;"><td></td></tr>
+      </tbody>
+      <tbody>
+        <tr class="footnote">
+          <td colspan="2" style="background-color:#f1f1f1;color:#211e1e;font-size:22px;font-family:Arial,Helvetica,sans-serif;text-align:center;padding:20px 20px 30px;">
+            <p>QUOTE OF THE DAY</p>
+            <p>[Add quote and attribution in Mailchimp]</p>
+          </td>
+        </tr>
+      </tbody>
+      <tbody>
+        <tr class="footer">
+          <td colspan="2" style="font-size:12px;background-color:#dfdfdf;color:#211e1e;text-align:center;font-family:Arial,Helvetica,sans-serif;padding:20px;">
+            <p style="text-transform:uppercase;">A product of</p>
+            <a style="text-decoration:none;border:0;" target="_blank" href="http://chamberhill.com">
+              <img alt="Chamber Hill Strategies" src="https://mcusercontent.com/376b597042727023b90a0d75c/images/621505da-83a2-382f-ac13-46a48f80ef5b.png">
+            </a>
+            <br>
+            <h3 style="margin-bottom:.5rem;font-weight:bold;">Follow Us</h3>
+            <a title="Follow Us on LinkedIn" style="text-decoration:none;border:0;" href="https://www.linkedin.com/showcase/policycrush-brief" target="_blank">
+              <img alt="LinkedIn" src="https://lriqei.stripocdn.email/content/assets/img/social-icons/rounded-black-bordered/linkedin-rounded-black-bordered.png" style="width:40px;height:auto;">
+            </a>
+            <br>
+            <p>© *|CURRENT_YEAR|*, Chamber Hill Strategies. All rights reserved.</p>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </center>
+  <center>
+    <br><br><br>
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" id="canspamBarWrapper" style="background-color:#fff;border-top:1px solid #e5e5e5;">
+      <tr>
+        <td align="center" valign="top" style="padding-top:20px;padding-bottom:20px;">
+          <table border="0" cellpadding="0" cellspacing="0" id="canspamBar">
+            <tr>
+              <td align="center" valign="top" style="color:#606060;font-family:Helvetica,Arial,sans-serif;font-size:11px;line-height:150%;padding-right:20px;padding-bottom:5px;padding-left:20px;text-align:center;">
+                This email was sent to <a href="mailto:*|EMAIL|*" target="_blank" style="color:#404040 !important;">*|EMAIL|*</a>
+                <br>
+                <a href="*|ABOUT_LIST|*" target="_blank" style="color:#404040 !important;"><em>why did I get this?</em></a>&nbsp;&nbsp;&nbsp;&nbsp;
+                <a href="*|UNSUB|*" target="_blank" style="color:#404040 !important;">unsubscribe from this list</a>&nbsp;&nbsp;&nbsp;&nbsp;
+                <a href="*|UPDATE_PROFILE|*" target="_blank" style="color:#404040 !important;">update subscription preferences</a>
+                <br>
+                *|LIST:ADDRESS|*
+                <br><br>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </center>
+</body>
+</html>

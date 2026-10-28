@@ -10,6 +10,11 @@
 <body>
   <a href="{{ url_for('home') }}" class="home-button">← Home</a>
   <h1>{{ page_title }}</h1>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <p class="status-message {{ category }}">{{ message }}</p>
+    {% endfor %}
+  {% endwith %}
   {% if built_at %}
     <p class="headline-built-at">Generated {{ built_at | pretty_date(true) }}</p>
   {% endif %}
@@ -55,6 +60,30 @@
       <form method="POST" action="{{ generate_url }}" class="headline-generate-form">
         <button type="submit" class="btn-primary">Generate {{ pending_count }} New Headline{% if pending_count != 1 %}s{% endif %}</button>
       </form>
+    {% endif %}
+    {% if mailchimp_enabled and not pending_count %}
+      {% if mailchimp_draft and mailchimp_draft.editor_url %}
+        <a href="{{ mailchimp_draft.editor_url }}" target="_blank" rel="noopener noreferrer"><button type="button">Open Mailchimp Draft</button></a>
+      {% endif %}
+      {% if mailchimp_configured %}
+        {% if not mailchimp_draft %}
+          <form method="POST" action="{{ mailchimp_action_url }}" class="mailchimp-draft-form">
+            <button type="submit" class="btn-primary">Create Mailchimp Draft →</button>
+          </form>
+        {% elif mailchimp_draft.unavailable %}
+          <form method="POST" action="{{ mailchimp_action_url }}" class="mailchimp-draft-form" data-confirm="Create a replacement Mailchimp draft?">
+            <input type="hidden" name="create_replacement" value="1">
+            <button type="submit" class="btn-primary">Create Replacement Draft →</button>
+          </form>
+        {% elif mailchimp_stale or mailchimp_draft.incomplete %}
+          <form method="POST" action="{{ mailchimp_action_url }}" class="mailchimp-draft-form" data-confirm="Overwrite the existing Mailchimp draft with the current finalized newsletter?">
+            <input type="hidden" name="confirm" value="1">
+            <button type="submit" class="btn-primary">Update Mailchimp Draft →</button>
+          </form>
+        {% endif %}
+      {% elif not mailchimp_draft %}
+        <button type="button" disabled title="Set MAILCHIMP_API_KEY to enable this action">Mailchimp Not Configured</button>
+      {% endif %}
     {% endif %}
   </div>
 
@@ -177,6 +206,19 @@
         const button = event.currentTarget.querySelector('button');
         button.disabled = true;
         button.textContent = 'Generating…';
+      });
+    });
+
+    document.querySelectorAll('.mailchimp-draft-form').forEach((form) => {
+      form.addEventListener('submit', (event) => {
+        const confirmation = event.currentTarget.dataset.confirm;
+        if (confirmation && !window.confirm(confirmation)) {
+          event.preventDefault();
+          return;
+        }
+        const button = event.currentTarget.querySelector('button');
+        button.disabled = true;
+        button.textContent = 'Creating Draft…';
       });
     });
   </script>

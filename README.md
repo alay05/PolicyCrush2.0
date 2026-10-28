@@ -41,6 +41,7 @@ Before deploying to Vercel:
 - `OPENAI_API_KEY`: enables article suggestion classification, categorization, and headline generation.
 - `OPENAI_MODEL`: optional override for the classifier model. Default is `gpt-3.5-turbo` to preserve current behavior.
 - `HEADLINE_OPENAI_MODEL`: optional model used for structured headline generation. Defaults to `gpt-4o-mini`.
+- `MAILCHIMP_API_KEY`: enables Main Newsletter draft creation in Mailchimp. Keep this server-side; the data center is read from the key suffix.
 - `SESSION_TYPE`: defaults to `filesystem`.
 - `SESSION_FILE_DIR`: optional filesystem session directory override.
 - `SCRAPER_BROWSER_PROVIDER`: `auto`, `requests`, `playwright`, or `selenium`.
