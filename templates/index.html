@@ -2,36 +2,37 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PolicyCrush Dashboard</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}">
   <link rel="icon" type="image/svg+xml" href="{{ asset_url('favicon.svg') }}">
 </head>
 <body class="page-wrapper">
   <div class="content">
-    <h1 style="margin-bottom: 1rem;">PolicyCrush Dashboard</h1>
+    <h1>PolicyCrush Dashboard</h1>
 
-    <h2 class="animate-in" style="animation-delay: 0.1s; text-align: center; width: 480px;">View</h2>
-    <div class="nav-buttons animate-in" style="animation-delay: 0.2s">
-      <a href="{{ url_for('saved_articles.saved_articles_view') }}"><button style="width:350px; height:90px; font-size: 1.35rem; font-weight: bold; margin-bottom: 1rem;">Saved Articles</button></a>
-    </div>
+    <section class="home-section animate-in" style="animation-delay: 0.1s;">
+      <h2>Newsletters</h2>
+      <div class="nav-buttons home-newsletter-buttons">
+        <a href="{{ url_for('saved_articles.saved_articles_view') }}"><button>Main Newsletter</button></a>
+        <a href="{{ url_for('add_event_pull.add_event_pull_home') }}"><button>W2W4</button></a>
+      </div>
+    </section>
 
-    <h2 class="animate-in" style="animation-delay: 0.3s; text-align: center; width: 480px;">Manual Tools</h2>
-    <div class="nav-buttons animate-in" style="animation-delay: 0.4s">
-      <a href="/gmail"><button>Gmail</button></a>
-      <a href="/news"><button>Daily</button></a>
-    </div>
-    <div class="nav-buttons animate-in" style="animation-delay: 0.5s">
-      <a href="/house"><button>House</button></a>
-      <a href="/senate"><button>Senate</button></a>
-    </div>
-    <div class="nav-buttons animate-in" style="animation-delay: 0.6s;">
-      <a href="/add-event"><button>AddEvent</button></a>
-      <a href="/add-event-pull"><button>W2W4</button></a>
-    </div>
+    <section class="home-section animate-in" style="animation-delay: 0.25s;">
+      <h2>Tools</h2>
+      <div class="nav-buttons home-tool-buttons">
+        <a href="{{ url_for('news.news_view') }}"><button>Daily</button></a>
+        <a href="{{ url_for('house.house_view') }}"><button>House</button></a>
+      </div>
+      <div class="nav-buttons home-tool-buttons">
+        <a href="{{ url_for('senate.senate_view') }}"><button>Senate</button></a>
+        <a href="{{ url_for('add_event.hearing_form') }}"><button>AddEvent (Manual)</button></a>
+      </div>
+    </section>
   </div>
-  
-  <footer class="footer animate-in" style="animation-delay: 1.25s;">
+
+  <footer class="footer animate-in" style="animation-delay: 0.4s;">
     <a href="https://www.chamberhill.com" target="_blank">
       <img src="{{ asset_url('logo.png') }}" alt="Chamber Hill Logo">
     </a>

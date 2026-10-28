@@ -17,11 +17,25 @@ class SavedArticlesTests(unittest.TestCase):
         app.config.update(TESTING=True, SECRET_KEY="test-secret")
         self.client = app.test_client()
 
-    def test_home_replaces_start_with_saved_articles_link(self):
+    def test_home_groups_newsletters_and_tools(self):
         response = self.client.get("/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Saved Articles", response.data)
+        self.assertIn(b"Newsletters", response.data)
+        self.assertIn(b"Tools", response.data)
+        self.assertIn(b"Main Newsletter", response.data)
+        self.assertIn(b'href="/saved-articles"', response.data)
+        self.assertIn(b"W2W4", response.data)
+        self.assertIn(b'href="/add-event-pull"', response.data)
+        self.assertIn(b"Daily", response.data)
+        self.assertIn(b'href="/news"', response.data)
+        self.assertIn(b"House", response.data)
+        self.assertIn(b'href="/house"', response.data)
+        self.assertIn(b"Senate", response.data)
+        self.assertIn(b'href="/senate"', response.data)
+        self.assertIn(b"AddEvent", response.data)
+        self.assertIn(b'href="/add-event"', response.data)
+        self.assertNotIn(b'href="/gmail"', response.data)
         self.assertNotIn(b">START<", response.data)
         self.assertEqual(self.client.get("/production/start").status_code, 200)
 

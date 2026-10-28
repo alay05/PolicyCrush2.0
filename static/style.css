@@ -64,6 +64,63 @@ h1 {
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
 }
 
+.home-section {
+  width: 100%;
+}
+
+.home-section + .home-section {
+  margin-top: 2rem;
+}
+
+.home-section h2 {
+  width: 520px;
+  max-width: 100%;
+  margin: 0 auto 1rem;
+  text-align: center;
+}
+
+.home-section .nav-buttons {
+  width: 440px;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.home-newsletter-buttons {
+  align-items: stretch;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 14px;
+}
+
+.home-newsletter-buttons a {
+  width: 100%;
+}
+
+.home-newsletter-buttons a button {
+  width: 100%;
+  height: 82px;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.home-tool-buttons {
+  gap: 14px;
+}
+
+.home-tool-buttons a {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.home-tool-buttons a button {
+  width: 100%;
+  height: 72px;
+}
+
+.home-tool-buttons + .home-tool-buttons {
+  margin-top: 0.875rem;
+}
+
 .home-button {
   position: fixed;
   top: 20px;
