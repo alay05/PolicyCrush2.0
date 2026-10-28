@@ -3,9 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime, date
 from io import BytesIO
-from xml.sax.saxutils import escape, quoteattr
 
-from flask import Blueprint, render_template, request, send_file, url_for, redirect, abort, make_response, session, jsonify
+from flask import Blueprint, render_template, request, send_file, url_for, redirect, abort, session, jsonify
 from features.categorize import categorize_article, CATEGORIES
 from collections import OrderedDict
 import hashlib, json
@@ -62,8 +61,6 @@ def _event_when_parts(ev) -> tuple[str, str]:
     return date_label, "Time unavailable"
 
 
-def _pdf_link(label: str, url: str) -> str:
-    return f'<link href={quoteattr(url)} color="#1d4ed8">{escape(label)}</link>'
 
 def _parse_date(s: str, fallback: date | None = None) -> date | None:
     try:
@@ -139,232 +136,6 @@ def add_event_pull_home():
         categorize_ready=categorize_ready,
         friendly_date=_friendly_date,
     )
-
-@add_event_pull.route("/add-event-pull/export", methods=["GET"])
-def add_event_pull_export_pdf():
-    # Require built categories that match current pulled set
-    cache = session.get("addevent_categories_cache") or {}
-    events_min = session.get("addevent_pulled") or []
-    if not cache.get("index") or not events_min:
-        return redirect(url_for("add_event_pull.add_event_categories_review"))
-    if cache.get("sig") != _event_signature(events_min):
-        return redirect(url_for("add_event_pull.add_event_categories_review"))
-
-    # Use last pulled range (or explicit query args) to re-pull full event objects
-    last_range = session.get("addevent_last_range") or {}
-    start_str = request.args.get("start") or last_range.get("start")
-    end_str   = request.args.get("end")   or last_range.get("end")
-    if not (start_str and end_str):
-        return redirect(url_for("add_event_pull.add_event_categories_review"))
-
-    start = _parse_date(start_str)
-    end   = _parse_date(end_str)
-    if not start or not end or end < start:
-        abort(400, "Invalid date range")
-
-    # Re-pull full events so PDF has full fields (starts_at_dt, original_link, etc.)
-    events_full = search_events_between(start, end, calendar_key=DEFAULT_CALENDAR_KEY) or []
-    by_id = {str((e.get("id") if isinstance(e, dict) else getattr(e, "id", ""))): e for e in events_full}
-
-    # Build ordered categories from cache index -> list of full event objs
-    index = cache.get("index") or {}
-    preferred = [*CATEGORIES]
-    ordered = OrderedDict()
-
-    # helper to get printable dt inside template
-    def _attach_dt(ev):
-        # ensure attribute access works in Jinja either way
-        if isinstance(ev, dict):
-            return ev
-        return ev  # Jinja handles attr/item lookup; no change needed
-
-    for lab in preferred:
-        if lab in index:
-            items = []
-            for ref in index[lab] or []:
-                ev = by_id.get(str(ref))
-                if ev:
-                    items.append(_attach_dt(ev))
-            if items:
-                ordered[lab] = items
-
-    # append any unexpected categories
-    for lab, refs in index.items():
-        if lab in ordered:
-            continue
-        items = []
-        for ref in refs or []:
-            ev = by_id.get(str(ref))
-            if ev:
-                items.append(_attach_dt(ev))
-        if items:
-            ordered[lab] = items
-
-    if not ordered:
-        # nothing matched the current range; bounce to review
-        return redirect(url_for("add_event_pull.add_event_categories_review"))
-
-    try:
-        from reportlab.lib import colors
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-        from reportlab.lib.units import inch
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-    except Exception as exc:
-        return make_response(
-            f"PDF export is unavailable in this deployment environment: {exc}",
-            503,
-        )
-
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        leftMargin=0.65 * inch,
-        rightMargin=0.65 * inch,
-        topMargin=0.7 * inch,
-        bottomMargin=0.7 * inch,
-        title="W2W4 Events",
-    )
-
-    styles = getSampleStyleSheet()
-    title_style = styles["Title"]
-    title_style.fontName = "Helvetica-Bold"
-    title_style.fontSize = 20
-    title_style.leading = 24
-
-    heading_style = styles["Heading2"]
-    heading_style.fontName = "Helvetica-Bold"
-    heading_style.fontSize = 14
-    heading_style.leading = 18
-    heading_style.spaceBefore = 12
-    heading_style.spaceAfter = 6
-    heading_style.textColor = colors.HexColor("#111827")
-
-    body_style = ParagraphStyle(
-        "AddEventBody",
-        parent=styles["BodyText"],
-        fontName="Helvetica",
-        fontSize=10,
-        leading=13,
-        textColor=colors.HexColor("#111827"),
-        spaceAfter=2,
-    )
-    meta_style = ParagraphStyle(
-        "AddEventMeta",
-        parent=body_style,
-        fontSize=9,
-        leading=12,
-        textColor=colors.HexColor("#6b7280"),
-    )
-    event_title_style = ParagraphStyle(
-        "AddEventTitle",
-        parent=body_style,
-        fontName="Helvetica-Bold",
-        fontSize=10.5,
-        leading=13,
-        spaceAfter=3,
-    )
-    link_style = ParagraphStyle(
-        "AddEventLink",
-        parent=body_style,
-        textColor=colors.HexColor("#1d4ed8"),
-    )
-    date_style = ParagraphStyle(
-        "AddEventDate",
-        parent=body_style,
-        fontName="Helvetica-Bold",
-    )
-
-    event_count = sum(len(items) for items in ordered.values())
-    range_label = _friendly_date(start.isoformat())
-    if end != start:
-        range_label = f"{range_label} – {_friendly_date(end.isoformat())}"
-
-    story = [
-        Paragraph("W2W4 Events", title_style),
-        Paragraph(
-            f"{escape(range_label)} &nbsp;&bull;&nbsp; "
-            f"{event_count} {'event' if event_count == 1 else 'events'}",
-            meta_style,
-        ),
-        Spacer(1, 0.18 * inch),
-    ]
-
-    for label, items in ordered.items():
-        if not items:
-            continue
-
-        story.append(Paragraph(escape(label), heading_style))
-        rows = [[
-            Paragraph("When", date_style),
-            Paragraph("Event", date_style),
-        ]]
-
-        for ev in items:
-            title = _event_value(ev, "title")
-            original_link = _event_value(ev, "original_link")
-            addevent_url = _event_value(ev, "addevent_url")
-            event_id = _event_value(ev, "id")
-            location = _event_value(ev, "location")
-            date_label, time_label = _event_when_parts(ev)
-
-            details = [Paragraph(escape(title or "Untitled event"), event_title_style)]
-            if location:
-                details.append(Paragraph(f"<b>Location:</b> {escape(str(location))}", meta_style))
-
-            links_html = []
-            if original_link:
-                links_html.append(_pdf_link("Event details", original_link))
-            elif addevent_url:
-                links_html.append(_pdf_link("Event page", addevent_url))
-
-            if event_id:
-                ics_url = url_for("add_event_pull.add_event_pull_event_ics", event_id=event_id, _external=True)
-                links_html.append(_pdf_link("Add to calendar", ics_url))
-
-            if links_html:
-                details.append(Paragraph(" &nbsp;&bull;&nbsp; ".join(links_html), link_style))
-
-            rows.append([
-                Paragraph(f"<b>{escape(date_label)}</b><br/>{escape(time_label)}", body_style),
-                details,
-            ])
-
-        table = Table(rows, colWidths=[2.1 * inch, 5.1 * inch], repeatRows=1)
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.white),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#6b7280")),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 10),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-            ("LINEBELOW", (0, 0), (-1, 0), 0.5, colors.HexColor("#e5e7eb")),
-            ("BACKGROUND", (0, 1), (-1, -1), colors.white),
-            ("LINEBELOW", (0, 1), (-1, -1), 0.35, colors.HexColor("#e5e7eb")),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ("TOPPADDING", (0, 1), (-1, -1), 7),
-            ("BOTTOMPADDING", (0, 1), (-1, -1), 7),
-        ]))
-        story.append(table)
-        story.append(Spacer(1, 0.14 * inch))
-
-    generated_at = datetime.now().strftime("%b %d, %Y at %I:%M %p").replace(" 0", " ")
-
-    def draw_footer(canvas, document):
-        canvas.saveState()
-        canvas.setFont("Helvetica", 8)
-        canvas.setFillColor(colors.HexColor("#6b7280"))
-        canvas.drawString(doc.leftMargin, 0.4 * inch, f"Generated {generated_at}")
-        canvas.drawRightString(letter[0] - doc.rightMargin, 0.4 * inch, f"Page {document.page}")
-        canvas.restoreState()
-
-    doc.build(story, onFirstPage=draw_footer, onLaterPages=draw_footer)
-    pdf_bytes = buffer.getvalue()
-    fname = f"w2w4-events-{start.strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}.pdf"
-    return send_file(BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=fname)
-
 
 @add_event_pull.route("/add-event-pull/ics/<event_id>.ics", methods=["GET"])
 def add_event_pull_event_ics(event_id: str):
@@ -505,12 +276,10 @@ def add_event_categories_review():
         if lab not in ordered:
             ordered[lab] = items
 
-    last_range = session.get("addevent_last_range") or {}
     return render_template(
         "add_event_categories.html",
         categories=ordered,
         built_at=cache.get("built_at"),
-        last_range=last_range, 
     )
 
 @add_event_pull.post("/add-event-pull/move-article")

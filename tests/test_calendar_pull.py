@@ -1,5 +1,4 @@
 import unittest
-from importlib.util import find_spec
 from datetime import datetime
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
@@ -8,7 +7,7 @@ from bs4 import BeautifulSoup
 
 from app import app
 from features import calendar_pull
-from routes.add_event_pull import _event_minimal, _event_signature, _event_when_parts, _pdf_link
+from routes.add_event_pull import _event_minimal, _event_when_parts
 
 
 class CalendarPullEventTimeTests(unittest.TestCase):
@@ -132,48 +131,6 @@ class CalendarPullPresentationTests(unittest.TestCase):
         self.assertNotIn("https://example.com/events/a-very-long-written-out-link", visible_text)
         self.assertNotIn("ICS", visible_text)
 
-    def test_pdf_link_keeps_destination_but_shows_a_short_label(self):
-        url = "https://example.com/events/a-very-long-written-out-link?one=1&two=2"
-
-        link_markup = _pdf_link("Event details", url)
-
-        self.assertIn("Event details", link_markup)
-        self.assertNotIn(f">{url}</link>", link_markup)
-        self.assertIn("href=", link_markup)
-
-    @unittest.skipUnless(find_spec("reportlab"), "ReportLab is not installed")
-    def test_pdf_export_returns_a_valid_w2w4_document(self):
-        event = calendar_pull._shape_event({
-            "id": "evt-pdf",
-            "title": "Medicare policy briefing",
-            "description": "Details: https://example.com/events/medicare-briefing",
-            "datetime_start": "2026-07-15 14:00:00",
-            "datetime_end": "2026-07-15 15:30:00",
-            "timezone": "America/New_York",
-            "location": "Room 2123",
-        })
-        minimal = _event_minimal(event)
-
-        with self.client.session_transaction() as session:
-            session["addevent_pulled"] = [minimal]
-            session["addevent_last_range"] = {
-                "start": "2026-07-15",
-                "end": "2026-07-15",
-            }
-            session["addevent_categories_cache"] = {
-                "sig": _event_signature([minimal]),
-                "index": {"Medicare": ["evt-pdf"]},
-            }
-
-        with patch("routes.add_event_pull.search_events_between", return_value=[event]):
-            response = self.client.get(
-                "/add-event-pull/export?start=2026-07-15&end=2026-07-15"
-            )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.mimetype, "application/pdf")
-        self.assertTrue(response.data.startswith(b"%PDF-"))
-        self.assertIn("w2w4-events-20260715-20260715.pdf", response.headers["Content-Disposition"])
 
 
 if __name__ == "__main__":

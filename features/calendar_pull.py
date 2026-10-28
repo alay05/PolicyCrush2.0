@@ -444,7 +444,7 @@ def make_ics_for_event(ev: PulledEvent) -> str:
     return "\r\n".join(lines)
 
 
-# ---- Grouping for UI/PDF -----------------------------------------------------
+# ---- Grouping for UI ---------------------------------------------------------
 
 def group_by_day(events: list[PulledEvent]) -> dict[str, list[PulledEvent]]:
     grouped: dict[str, list[PulledEvent]] = {}

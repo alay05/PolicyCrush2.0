@@ -56,16 +56,6 @@
     <a href="{{ url_for('add_event_pull.add_event_pull_home') }}" style="text-decoration:none;">
       <button type="button">← Back to Range</button>
     </a>
-
-    {% if last_range and last_range.get('start') and last_range.get('end') %}
-      <a class="export-btn"
-         href="{{ url_for('add_event_pull.add_event_pull_export_pdf',
-                          start=last_range.get('start'),
-                          end=last_range.get('end')) }}"
-         style="text-decoration:none; margin-left:.5rem;">
-        <button type="button">Export PDF</button>
-      </a>
-    {% endif %}
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js" crossorigin="anonymous"></script>
