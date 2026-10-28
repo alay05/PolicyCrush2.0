@@ -82,8 +82,14 @@ def review():
     return render_template(
         "headlines/review.html",
         categories=categories,
+        page_title="Main Newsletter — Finalize",
         built_at=workflow.get("built_at"),
         pending_count=pending_count,
+        move_url=url_for("headlines.move"),
+        rename_url=url_for("headlines.rename"),
+        generate_url=url_for("headlines.generate"),
+        back_url=url_for("saved_articles.saved_articles_view"),
+        back_label="← Saved Articles",
     )
 
 

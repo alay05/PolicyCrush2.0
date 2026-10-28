@@ -4,7 +4,11 @@ import unittest
 from unittest.mock import Mock, patch
 
 from app import app
-from headlines.generator import generate_headline_records, load_style_examples
+from headlines.generator import (
+    generate_event_headline_records,
+    generate_headline_records,
+    load_style_examples,
+)
 from routes.saved_articles import prepare_article
 
 
@@ -66,6 +70,50 @@ class HeadlineGeneratorTests(unittest.TestCase):
         self.assertEqual(request_args["text"]["format"]["type"], "json_schema")
         self.assertFalse(request_args["store"])
 
+    def test_w2w_headlines_are_simple_categorized_and_include_exact_schedule(self):
+        events = [
+            {
+                "id": "event-1",
+                "title": "Committee on Finance Hearing on Rural Health Care",
+                "date_label": "Wed, Oct 28, 2026",
+                "time_label": "10:00 AM EDT – 12:00 PM EDT",
+                "location": "Room 215, Dirksen Senate Office Building",
+            }
+        ]
+        response = Mock(
+            output_text=json.dumps(
+                {
+                    "articles": [
+                        {
+                            "id": "event-1",
+                            "headline": "Senate Finance Committee Hearing on Rural Health Care",
+                            "category": "Medicare",
+                        }
+                    ]
+                }
+            )
+        )
+        client = Mock()
+        client.responses.create.return_value = response
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}), patch(
+            "headlines.generator.OpenAI", return_value=client
+        ):
+            generated = generate_event_headline_records(events)
+
+        self.assertEqual(generated[0]["category"], "Medicare")
+        self.assertEqual(
+            generated[0]["headline"],
+            "Senate Finance Committee Hearing on Rural Health Care — "
+            "Wed, Oct 28, 2026 · 10:00 AM EDT – 12:00 PM EDT",
+        )
+        request_args = client.responses.create.call_args.kwargs
+        self.assertNotIn(
+            "Events", request_args["text"]["format"]["schema"]["properties"]
+            ["articles"]["items"]["properties"]["category"]["enum"]
+        )
+        self.assertIn("simple, literal headlines", request_args["instructions"])
+
 
 class HeadlineWorkflowTests(unittest.TestCase):
     def setUp(self):
@@ -113,7 +161,8 @@ class HeadlineWorkflowTests(unittest.TestCase):
         response = self._generate()
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Generated Headlines", response.data)
+        self.assertIn("Main Newsletter — Finalize".encode(), response.data)
+        self.assertNotIn(b">Generated Headlines<", response.data)
         self.assertIn(b"CMS Updates Medicare Policy", response.data)
         self.assertIn(b"Original: Original Medicare title", response.data)
         self.assertIn(b"Pharmaceuticals and Medical Devices", response.data)

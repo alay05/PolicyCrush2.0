@@ -11,6 +11,12 @@
   <a href="/" class="home-button">← Home</a>
   <h1>W2W4</h1>
 
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <p class="status-message {{ category }}">{{ message }}</p>
+    {% endfor %}
+  {% endwith %}
+
   <form method="POST" action="{{ url_for('add_event_pull.add_event_pull_home') }}"
         id="add-event-pull-form"
         style="display:flex; flex-wrap:wrap; gap:.75rem; align-items:center; justify-content:center; margin:1rem 0 1.25rem;">
@@ -26,24 +32,25 @@
     <p style="color:#b91c1c; text-align:center; margin:.5rem 0 1rem;">{{ error }}</p>
   {% endif %}
 
-  {% if grouped and grouped|length %}
+  {% if generated_count or pending_count %}
     <div class="w2w-toolbar">
-      <form method="POST" action="{{ url_for('add_event_pull.add_event_pull_build_categories') }}"
-            class="w2w-inline-form">
-        <input type="hidden" name="start" value="{{ start_date }}">
-        <input type="hidden" name="end" value="{{ end_date }}">
-        <button type="submit" class="btn-primary">
-          {% if categorize_ready %}Rebuild Categories{% else %}Build Categories →{% endif %}
-        </button>
-      </form>
-
-      {% if categorize_ready %}
+      {% if generated_count %}
         <a href="{{ url_for('add_event_pull.add_event_categories_review') }}" style="text-decoration:none;">
-          <button type="button">View Categories</button>
+          <button type="button">View Generated Headlines</button>
         </a>
       {% endif %}
+      {% if pending_count %}
+        <form method="POST" action="{{ url_for('add_event_pull.add_event_pull_generate_headlines') }}"
+              class="w2w-inline-form headline-generate-form">
+          <button type="submit" class="btn-primary">
+            {% if generated_count %}Generate {{ pending_count }} New Headline{% if pending_count != 1 %}s{% endif %}{% else %}Generate Headlines{% endif %} →
+          </button>
+        </form>
+      {% endif %}
     </div>
+  {% endif %}
 
+  {% if grouped and grouped|length %}
     {% for day, items in grouped.items() %}
       <div class="source" data-day="{{ day }}">
         <h2 class="w2w-section-heading">
@@ -94,10 +101,21 @@
       No events found in {{ start_date }} → {{ end_date }}.
       Try widening the range or check your AddEvent calendar.
     </p>
-  {% else %}
+  {% elif not generated_count and not pending_count %}
     <p style="text-align:center; color:#374151; margin-top:1rem;">
       Enter a date range and click <em>Get Events</em> to load items from your AddEvent calendar.
     </p>
+  {% else %}
+    <p style="text-align:center; color:#374151; margin-top:1rem;">
+      Your last pulled events are still available in the headline workflow above.
+    </p>
   {% endif %}
+  <script>
+    document.querySelector('.headline-generate-form')?.addEventListener('submit', (event) => {
+      const button = event.currentTarget.querySelector('button');
+      button.disabled = true;
+      button.textContent = 'Generating…';
+    });
+  </script>
 </body>
 </html>

@@ -131,7 +131,87 @@ class CalendarPullPresentationTests(unittest.TestCase):
         self.assertNotIn("https://example.com/events/a-very-long-written-out-link", visible_text)
         self.assertNotIn("ICS", visible_text)
 
+    def test_pulled_events_offer_the_same_generate_headlines_action(self):
+        event = calendar_pull._shape_event({
+            "id": "evt-headline-button",
+            "title": "Health policy hearing",
+            "datetime_start": "2026-10-28 10:00:00",
+            "timezone": "America/New_York",
+        })
 
+        with patch("routes.add_event_pull.search_events_between", return_value=[event]):
+            response = self.client.post(
+                "/add-event-pull",
+                data={"start_date": "2026-10-28", "end_date": "2026-10-28"},
+            )
+
+        self.assertIn(b"Generate Headlines", response.data)
+        self.assertIn(b"/add-event-pull/generate-headlines", response.data)
+        self.assertNotIn(b"Build Categories", response.data)
+
+    def test_w2w_headlines_use_main_review_and_remain_editable_and_movable(self):
+        event = calendar_pull._shape_event({
+            "id": "evt-generated",
+            "title": "Finance Committee hearing on rural health",
+            "datetime_start": "2026-10-28 10:00:00",
+            "datetime_end": "2026-10-28 12:00:00",
+            "timezone": "America/New_York",
+            "location": "Room 215",
+            "description": "https://example.com/hearing",
+        })
+        minimal = _event_minimal(event)
+        generated = [{
+            "id": "evt-generated",
+            "headline": "Senate Finance Committee Hearing on Rural Health — "
+                        "Wed, Oct 28, 2026 · 10:00 AM EDT – 12:00 PM EDT",
+            "category": "Medicare",
+        }]
+        with self.client.session_transaction() as current_session:
+            current_session["addevent_pulled"] = [minimal]
+
+        with patch(
+            "routes.add_event_pull.generate_event_headline_records",
+            return_value=generated,
+        ):
+            response = self.client.post(
+                "/add-event-pull/generate-headlines", follow_redirects=True
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("W2W4 — Finalize".encode(), response.data)
+        self.assertNotIn(b">Generated Headlines<", response.data)
+        self.assertIn(generated[0]["headline"].encode(), response.data)
+        self.assertIn(b"Original: Finance Committee hearing on rural health", response.data)
+        self.assertIn(b"Medicare", response.data)
+        self.assertIn(b"10:00 AM EDT", response.data)
+        self.assertNotIn(b"Export PDF", response.data)
+
+        w2w_page = self.client.get("/add-event-pull")
+        self.assertIn(b"View Generated Headlines", w2w_page.data)
+
+        renamed = self.client.post(
+            "/add-event-pull/rename-headline",
+            json={"id": "evt-generated", "headline": "Edited Hearing Headline"},
+        )
+        moved = self.client.post(
+            "/add-event-pull/move-article",
+            json={
+                "id": "evt-generated",
+                "from_category": "Medicare",
+                "to_category": "Health Insurance",
+                "new_index": 0,
+            },
+        )
+
+        self.assertEqual(renamed.get_json(), {"ok": True})
+        self.assertEqual(moved.get_json(), {"ok": True})
+        with self.client.session_transaction() as current_session:
+            workflow = current_session["addevent_categories_cache"]
+            self.assertEqual(
+                workflow["items"]["evt-generated"]["headline"],
+                "Edited Hearing Headline",
+            )
+            self.assertEqual(workflow["index"]["Health Insurance"], ["evt-generated"])
 
 if __name__ == "__main__":
     unittest.main()

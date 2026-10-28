@@ -4,8 +4,9 @@ from __future__ import annotations
 from datetime import datetime, date
 from io import BytesIO
 
-from flask import Blueprint, render_template, request, send_file, url_for, redirect, abort, session, jsonify
+from flask import Blueprint, render_template, request, send_file, url_for, redirect, abort, session, jsonify, flash
 from features.categorize import categorize_article, CATEGORIES
+from headlines.generator import HeadlineGenerationError, generate_event_headline_records
 from collections import OrderedDict
 import hashlib, json
 
@@ -61,6 +62,50 @@ def _event_when_parts(ev) -> tuple[str, str]:
     return date_label, "Time unavailable"
 
 
+def _current_event_headline_workflow(events: list[dict] | None = None):
+    events = list(events if events is not None else session.get("addevent_pulled") or [])
+    event_by_id = {str(event.get("id")): event for event in events}
+    cache = session.get("addevent_categories_cache") or {}
+    raw_items = cache.get("items")
+    raw_index = cache.get("index")
+    if not event_by_id or not isinstance(raw_items, dict) or not isinstance(raw_index, dict):
+        return None
+
+    compared_fields = ("title", "url", "date", "date_label", "time_label", "location")
+    items = {
+        event_id: item
+        for event_id, item in raw_items.items()
+        if event_id in event_by_id
+        and all(item.get(field) == event_by_id[event_id].get(field) for field in compared_fields)
+    }
+    if not items:
+        return None
+
+    index = {category: [] for category in CATEGORIES}
+    placed = set()
+    for category in CATEGORIES:
+        for event_id in raw_index.get(category, []):
+            event_id = str(event_id)
+            if event_id in items and event_id not in placed:
+                index[category].append(event_id)
+                placed.add(event_id)
+    for event_id in items:
+        if event_id not in placed:
+            index["Quality and Innovation"].append(event_id)
+
+    if items != raw_items or index != raw_index:
+        cache["items"] = items
+        cache["index"] = index
+        session["addevent_categories_cache"] = cache
+        session.modified = True
+    return cache
+
+
+def _event_headline_status(events: list[dict]) -> tuple[int, int]:
+    workflow = _current_event_headline_workflow(events)
+    generated_ids = set(workflow["items"]) if workflow else set()
+    event_ids = {str(event.get("id")) for event in events}
+    return len(generated_ids & event_ids), len(event_ids - generated_ids)
 
 def _parse_date(s: str, fallback: date | None = None) -> date | None:
     try:
@@ -83,6 +128,10 @@ def add_event_pull_home():
     # NEW: default + compute from session so GET works
     categorize_ready = False
     cur_events = session.get("addevent_pulled") or []
+    if request.method == "GET" and cur_events and (not start_str or not end_str):
+        last_range = session.get("addevent_last_range") or {}
+        start_str = start_str or last_range.get("start")
+        end_str = end_str or last_range.get("end")
     if cur_events:
         cur_sig = _event_signature(cur_events)
         cache = session.get("addevent_categories_cache") or {}
@@ -125,6 +174,7 @@ def add_event_pull_home():
         session["addevent_last_range"] = {"start": start_str, "end": end_str}
         session.modified = True
 
+    generated_count, pending_count = _event_headline_status(cur_events)
     return render_template(
         "add_event_pull.html",
         start_date=start_str,
@@ -134,6 +184,8 @@ def add_event_pull_home():
         error=error,
         addevent_calendar_href="https://app.addevent.com/calendars/GT179952",
         categorize_ready=categorize_ready,
+        generated_count=generated_count,
+        pending_count=pending_count,
         friendly_date=_friendly_date,
     )
 
@@ -187,6 +239,55 @@ def _event_signature(events: list[dict]) -> str:
 
 def _resolve_event_ref(ref: str, events_by_id: dict[str, dict]) -> dict | None:
     return events_by_id.get(str(ref))
+
+
+@add_event_pull.post("/add-event-pull/generate-headlines")
+def add_event_pull_generate_headlines():
+    events = list(session.get("addevent_pulled") or [])
+    if not events:
+        flash("Pull at least one event before generating headlines.", "info")
+        return redirect(url_for("add_event_pull.add_event_pull_home"))
+
+    events_by_id = {str(event.get("id")): event for event in events}
+    workflow = _current_event_headline_workflow(events)
+    existing_ids = set(workflow["items"]) if workflow else set()
+    events_to_generate = [
+        event for event in events if str(event.get("id")) not in existing_ids
+    ]
+    if not events_to_generate:
+        return redirect(url_for("add_event_pull.add_event_categories_review"))
+
+    try:
+        generated = generate_event_headline_records(events_to_generate)
+    except HeadlineGenerationError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("add_event_pull.add_event_pull_home"))
+
+    items = dict(workflow["items"]) if workflow else {}
+    index = {
+        category: list((workflow["index"] if workflow else {}).get(category, []))
+        for category in CATEGORIES
+    }
+    for result in generated:
+        event_id = str(result["id"])
+        source = events_by_id[event_id]
+        items[event_id] = {
+            **source,
+            "original_title": source.get("title", ""),
+            "headline": result["headline"],
+        }
+        index[result["category"]].append(event_id)
+
+    session["addevent_categories_cache"] = {
+        "built_at": datetime.now().isoformat(timespec="seconds"),
+        "sig": _event_signature(events),
+        "count": len(events),
+        "items": items,
+        "index": index,
+    }
+    session["addevent_categorize_ready"] = True
+    session.modified = True
+    return redirect(url_for("add_event_pull.add_event_categories_review"))
 
 @add_event_pull.post("/add-event-pull/build-categories")
 def add_event_pull_build_categories():
@@ -254,8 +355,33 @@ def add_event_categories_review():
     if not isinstance(cache, dict) or "index" not in cache:
         return redirect(url_for("add_event_pull.add_event_pull_home"))
 
-    index = cache.get("index") or {}
     events = session.get("addevent_pulled") or []
+    workflow = _current_event_headline_workflow(events)
+    if workflow:
+        items = workflow["items"]
+        event_ids = {str(event.get("id")) for event in events}
+        pending_count = len(event_ids - set(items))
+        categories = OrderedDict(
+            (
+                category,
+                [items[event_id] for event_id in workflow["index"].get(category, []) if event_id in items],
+            )
+            for category in CATEGORIES
+        )
+        return render_template(
+            "headlines/review.html",
+            categories=categories,
+            page_title="W2W4 — Finalize",
+            built_at=workflow.get("built_at"),
+            pending_count=pending_count,
+            move_url=url_for("add_event_pull.add_event_pull_move_article"),
+            rename_url=url_for("add_event_pull.add_event_pull_rename_headline"),
+            generate_url=url_for("add_event_pull.add_event_pull_generate_headlines"),
+            back_url=url_for("add_event_pull.add_event_pull_home"),
+            back_label="← W2W4",
+        )
+
+    index = cache.get("index") or {}
     by_id = {str(e.get("id")): e for e in events}
 
     hydrated = {}
@@ -281,6 +407,29 @@ def add_event_categories_review():
         categories=ordered,
         built_at=cache.get("built_at"),
     )
+
+
+@add_event_pull.post("/add-event-pull/rename-headline")
+def add_event_pull_rename_headline():
+    payload = request.get_json(silent=True) or {}
+    event_id = str(payload.get("id") or "").strip()
+    headline = str(payload.get("headline") or "").strip()
+    if not event_id or not headline:
+        return jsonify(ok=False, error="Missing event ID or headline"), 400
+    if len(headline) > 500:
+        return jsonify(ok=False, error="Headline is too long"), 400
+
+    workflow = _current_event_headline_workflow()
+    if not workflow:
+        return jsonify(ok=False, error="No current headline workflow"), 409
+    if event_id not in workflow["items"]:
+        return jsonify(ok=False, error="Event not found"), 404
+
+    workflow["items"][event_id]["headline"] = headline
+    workflow["built_at"] = datetime.now().isoformat(timespec="seconds")
+    session["addevent_categories_cache"] = workflow
+    session.modified = True
+    return jsonify(ok=True)
 
 @add_event_pull.post("/add-event-pull/move-article")
 def add_event_pull_move_article():
