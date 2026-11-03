@@ -1,5 +1,6 @@
 import hashlib
 from datetime import date, datetime
+from urllib.parse import urlparse
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 
@@ -18,7 +19,10 @@ TOOL_LABELS = {
     "news": "Daily",
     "house": "House",
     "senate": "Senate",
+    "manual": "Manual",
 }
+
+MANUAL_SECTIONS = {"", "majority", "minority", "hearing"}
 
 
 def _article_id(url: str) -> str:
@@ -134,6 +138,60 @@ def add_saved_articles(tool: str):
         flash("Select at least one article to save.", "info")
 
     return redirect(url_for(TOOL_ENDPOINTS[tool]))
+
+
+@saved_articles.post("/saved-articles/manual")
+def add_manual_article():
+    title = request.form.get("title", "").strip()
+    url = request.form.get("url", "").strip()
+    publication_date = request.form.get("date", "").strip()
+    publication_time = request.form.get("time", "").strip()
+    source = request.form.get("source", "").strip()
+    section = request.form.get("section", "").strip().lower()
+
+    if not title or not url or not publication_date or not source:
+        flash("Enter a title, source, link, and date for the article.", "error")
+        return redirect(url_for("saved_articles.saved_articles_view"))
+    if len(title) > 500 or len(url) > 2048 or len(source) > 100:
+        flash("The manual article contains a field that is too long.", "error")
+        return redirect(url_for("saved_articles.saved_articles_view"))
+
+    parsed_url = urlparse(url)
+    if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+        flash("Enter a valid article link beginning with http:// or https://.", "error")
+        return redirect(url_for("saved_articles.saved_articles_view"))
+    if section not in MANUAL_SECTIONS:
+        flash("Select a valid article type.", "error")
+        return redirect(url_for("saved_articles.saved_articles_view"))
+
+    try:
+        if publication_time:
+            article_date = datetime.fromisoformat(
+                f"{publication_date}T{publication_time}"
+            ).isoformat()
+        else:
+            article_date = date.fromisoformat(publication_date).isoformat()
+    except ValueError:
+        flash("Enter a valid article date and time.", "error")
+        return redirect(url_for("saved_articles.saved_articles_view"))
+
+    saved = list(session.get("saved_articles") or [])
+    if any((article.get("url") or "").strip() == url for article in saved):
+        flash("That article is already saved.", "info")
+        return redirect(url_for("saved_articles.saved_articles_view"))
+
+    saved.append(
+        prepare_article(
+            {"title": title, "url": url, "date": article_date},
+            "manual",
+            source,
+            section,
+        )
+    )
+    session["saved_articles"] = saved
+    session.modified = True
+    flash("Manual article saved.", "success")
+    return redirect(url_for("saved_articles.saved_articles_view"))
 
 
 @saved_articles.post("/saved-articles/<article_id>/remove")

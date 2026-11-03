@@ -34,6 +34,55 @@
         </div>
       {% endfor %}
     </div>
+  {% else %}
+    <div class="empty-state">
+      <p>No articles have been saved yet.</p>
+      <p>Select articles after pulling them from Daily, House, or Senate, or add one manually below.</p>
+    </div>
+  {% endif %}
+
+  <section class="manual-article-section">
+    <h2>Add an Article Manually</h2>
+    <p>Add an article that was not pulled from one of the newsletter tools.</p>
+    <form method="POST" action="{{ url_for('saved_articles.add_manual_article') }}" class="manual-article-form">
+      <div class="manual-article-grid">
+        <label class="manual-article-field manual-article-title">
+          <span>Title</span>
+          <input type="text" name="title" maxlength="500" required>
+        </label>
+        <label class="manual-article-field manual-article-source">
+          <span>Source</span>
+          <input type="text" name="source" maxlength="100" placeholder="e.g., CMS" required>
+        </label>
+        <label class="manual-article-field manual-article-url">
+          <span>Link</span>
+          <input type="url" name="url" maxlength="2048" placeholder="https://..." required>
+        </label>
+        <label class="manual-article-field">
+          <span>Date</span>
+          <input type="date" name="date" required>
+        </label>
+        <label class="manual-article-field">
+          <span>Time <small>(optional)</small></span>
+          <input type="time" name="time">
+        </label>
+        <label class="manual-article-field manual-article-type">
+          <span>Article Type</span>
+          <select name="section">
+            <option value="">Standard Article</option>
+            <option value="hearing">Hearing / Event</option>
+            <option value="majority">Majority</option>
+            <option value="minority">Minority</option>
+          </select>
+        </label>
+      </div>
+      <div class="manual-article-actions">
+        <button type="submit" class="btn-primary">Add Article</button>
+      </div>
+    </form>
+  </section>
+
+  {% if articles %}
     <div class="workflow-actions">
       <form method="POST" action="{{ url_for('saved_articles.clear_saved_articles') }}" onsubmit="return confirm('Clear all saved articles?');">
         <button type="submit" class="remove-article-btn">Clear Saved</button>
@@ -48,11 +97,6 @@
           </button>
         </form>
       {% endif %}
-    </div>
-  {% else %}
-    <div class="empty-state">
-      <p>No articles have been saved yet.</p>
-      <p>Select articles after pulling them from Daily, House, or Senate.</p>
     </div>
   {% endif %}
   <script>
