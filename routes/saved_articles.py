@@ -149,8 +149,8 @@ def add_manual_article():
     source = request.form.get("source", "").strip()
     section = request.form.get("section", "").strip().lower()
 
-    if not title or not url or not publication_date or not source:
-        flash("Enter a title, source, link, and date for the article.", "error")
+    if not title or not url or not publication_date:
+        flash("Enter a title, link, and date for the article.", "error")
         return redirect(url_for("saved_articles.saved_articles_view"))
     if len(title) > 500 or len(url) > 2048 or len(source) > 100:
         flash("The manual article contains a field that is too long.", "error")

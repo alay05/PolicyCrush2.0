@@ -172,7 +172,6 @@ class SavedArticlesTests(unittest.TestCase):
             "/saved-articles/manual",
             data={
                 "title": "CMS releases a new Medicare policy",
-                "source": "CMS",
                 "url": "https://example.com/manual-cms-policy",
                 "date": "2026-11-03",
                 "section": "",
@@ -200,7 +199,8 @@ class SavedArticlesTests(unittest.TestCase):
         requested_article = generate_mock.call_args.args[0][0]
         self.assertEqual(requested_article["id"], article["id"])
         self.assertEqual(requested_article["tool"], "manual")
-        self.assertEqual(requested_article["source_label"], "Manual — CMS")
+        self.assertEqual(requested_article["source"], "")
+        self.assertEqual(requested_article["source_label"], "Manual")
 
     def test_manual_article_rejects_invalid_links_and_duplicate_urls(self):
         invalid = self.client.post(
