@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="{{ asset_url('favicon.svg') }}">
 </head>
 <body>
-  <a href="/" class="home-button">← Home</a>
+  {% include '_tool_menu.html' %}
   <h1>PolicyCrush Production</h1>
 
   <form method="POST" action="{{ url_for('production.production_start_action') }}">

@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="{{ asset_url('style.css') }}">
 </head>
 <body>
-  <a href="/" class="home-button">← Home</a>
+  {% include '_tool_menu.html' %}
   <h1>AddEvent Categories</h1>
   {% if built_at %}
     <p class="w2w-built-at"><small>Built: {{ built_at }}</small></p>

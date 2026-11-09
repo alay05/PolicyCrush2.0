@@ -1,0 +1,78 @@
+{% set current_endpoint = request.endpoint or '' %}
+<nav class="tool-menu" aria-label="Tool navigation" data-tool-menu>
+  <button
+    type="button"
+    class="tool-menu__trigger"
+    aria-expanded="false"
+    aria-controls="tool-menu-panel"
+  >
+    <span class="tool-menu__icon" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span>Menu</span>
+  </button>
+
+  <div class="tool-menu__panel" id="tool-menu-panel" hidden>
+    <div class="tool-menu__heading">
+      <strong>PolicyCrush</strong>
+      <span>Jump to</span>
+    </div>
+
+    <a href="{{ url_for('home') }}" class="tool-menu__home">
+      <span>Home</span>
+      <span aria-hidden="true">←</span>
+    </a>
+
+    <p class="tool-menu__label">Newsletters</p>
+    <a
+      href="{{ url_for('saved_articles.saved_articles_view') }}"
+      {% if current_endpoint.startswith('saved_articles.') or current_endpoint.startswith('headlines.') %}class="is-current" aria-current="page"{% endif %}
+    >Main Newsletter</a>
+    <a
+      href="{{ url_for('add_event_pull.add_event_pull_home') }}"
+      {% if current_endpoint.startswith('add_event_pull.') %}class="is-current" aria-current="page"{% endif %}
+    >W2W4</a>
+
+    <p class="tool-menu__label">Tools</p>
+    <a
+      href="{{ url_for('news.news_view') }}"
+      {% if current_endpoint.startswith('news.') %}class="is-current" aria-current="page"{% endif %}
+    >Daily</a>
+    <a
+      href="{{ url_for('house.house_view') }}"
+      {% if current_endpoint.startswith('house.') %}class="is-current" aria-current="page"{% endif %}
+    >House</a>
+    <a
+      href="{{ url_for('senate.senate_view') }}"
+      {% if current_endpoint.startswith('senate.') %}class="is-current" aria-current="page"{% endif %}
+    >Senate</a>
+    <a
+      href="{{ url_for('add_event.hearing_form') }}"
+      {% if current_endpoint.startswith('add_event.') %}class="is-current" aria-current="page"{% endif %}
+    >AddEvent <small>Manual</small></a>
+  </div>
+
+  <script>
+    (() => {
+      const menu = document.currentScript.closest('[data-tool-menu]');
+      const trigger = menu.querySelector('.tool-menu__trigger');
+      const panel = menu.querySelector('.tool-menu__panel');
+
+      const setOpen = (open) => {
+        trigger.setAttribute('aria-expanded', String(open));
+        panel.hidden = !open;
+      };
+
+      trigger.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setOpen(trigger.getAttribute('aria-expanded') !== 'true');
+      });
+      panel.addEventListener('click', (event) => event.stopPropagation());
+      document.addEventListener('click', () => setOpen(false));
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && trigger.getAttribute('aria-expanded') === 'true') {
+          setOpen(false);
+          trigger.focus();
+        }
+      });
+    })();
+  </script>
+</nav>
