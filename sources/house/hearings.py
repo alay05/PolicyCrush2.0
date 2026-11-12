@@ -71,10 +71,9 @@ def _possible_tracked_committee(label):
 @lru_cache(maxsize=180)
 def _calendar_entries_for_week(week_start):
     week_end = week_start + timedelta(days=6)
-    # fetch_response deliberately has a small interface. Add the House query to
-    # the URL so both direct and optional proxy transports request the same page.
+    # Include the House query in the URL passed to the shared fetch helper.
     calendar_url = f"{CALENDAR_URL}?WeekOf={week_start:%m%d%Y}_{week_end:%m%d%Y}"
-    response = fetch_response(calendar_url, timeout=20, proxy_on_block=True)
+    response = fetch_response(calendar_url, timeout=20)
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
     entries = []
@@ -124,7 +123,7 @@ def _committee_from_event_text(text):
 @lru_cache(maxsize=2048)
 def _fetch_event(event_id, event_date):
     url = EVENT_URL.format(event_id)
-    response = fetch_response(url, timeout=20, proxy_on_block=True)
+    response = fetch_response(url, timeout=20)
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
     heading = next(

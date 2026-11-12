@@ -28,7 +28,6 @@ def get_senate_page(url, *, start_date=None, max_pages=8):
             url,
             headers=REQUEST_HEADERS,
             timeout=REQUEST_TIMEOUT,
-            proxy_on_block=True,
         )
     except (ScraperUnavailableError, requests.RequestException) as error:
         print(f"Error loading Senate source {url}: {error}")
@@ -74,7 +73,6 @@ def get_senate_page(url, *, start_date=None, max_pages=8):
                 next_url,
                 headers=REQUEST_HEADERS,
                 timeout=REQUEST_TIMEOUT,
-                proxy_on_block=True,
             )
         except (ScraperUnavailableError, requests.RequestException) as error:
             print(f"Error loading Senate source page {next_url}: {error}")

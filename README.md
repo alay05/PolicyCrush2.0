@@ -35,7 +35,6 @@ Before deploying to Vercel:
 2. Set `FLASK_SECRET_KEY` in the Vercel project environment variables.
 3. Set any app secrets you already use locally, including `OPENAI_API_KEY` when suggestions are enabled.
 4. Set `CONGRESS_API_KEY` for Senate and Joint Economic hearings.
-5. Optionally set `SCRAPINGBEE_API_KEY` to try a paid transport when committee sites reject normal requests. Akamai may still reject the proxied request.
 
 ## Environment variables
 
@@ -46,9 +45,6 @@ Before deploying to Vercel:
 - `HEADLINE_OPENAI_MODEL`: optional model used for structured headline generation. Defaults to `gpt-4o-mini`.
 - `MAILCHIMP_API_KEY`: enables Main Newsletter draft creation in Mailchimp. Keep this server-side; the data center is read from the key suffix.
 - `CONGRESS_API_KEY`: required for Senate and Joint Economic hearing calendars. Get a free key from https://api.congress.gov/sign-up/.
-- `SCRAPINGBEE_API_KEY`: optional transport fallback for official committee pages that return 401, 403, or 429 to normal server requests. Get it from https://www.scrapingbee.com/.
-- `SCRAPINGBEE_PREMIUM_PROXY`: defaults to `true`. Set to `false` only if the standard proxy pool works for the Senate sites.
-- `SCRAPINGBEE_CIRCUIT_BREAKER_SECONDS`: defaults to 15 minutes and prevents repeated paid transport requests after Senate Akamai rejects the transport.
 - `CONGRESS_CACHE_TTL_SECONDS`: optional Congress.gov meeting-cache refresh interval. Defaults to one hour.
 - `CONGRESS_INITIAL_LOOKBACK_DAYS`: update-date lookback used to seed a hearing cache around the requested date. Defaults to `120`; requesting an older date expands the cache backward.
 - `CONGRESS_API_MAX_WORKERS`: optional bounded concurrency for the initial Congress.gov meeting index. Defaults to `8`.
@@ -74,5 +70,5 @@ If a hosted environment still blocks one of those sources, articles can be enter
 - House hearings use the official House Committee Repository calendar. Senate and Joint Economic hearings use the official Congress.gov API; later pulls reuse cached meeting details.
 - Local meeting details are cached under the system temporary directory. When `BLOB_READ_WRITE_TOKEN` is configured, Vercel Blob also stores the cache so cold function instances do not repeatedly consume the Congress.gov API quota.
 - House majority/minority listings and Senate majority/minority listings paginate through the requested start date.
-- Committee press pages always try the official committee URL directly first. If that request is blocked and `SCRAPINGBEE_API_KEY` is configured, the app attempts the same government URL through ScrapingBee with JavaScript rendering disabled. A circuit breaker prevents repeated paid requests when Akamai also rejects that transport.
+- Committee press pages request the official committee URLs directly.
 - Committee scraping does not require Selenium, Playwright, Chrome, or a bundled browser.

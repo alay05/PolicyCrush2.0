@@ -1,7 +1,4 @@
 from contextlib import suppress
-import threading
-import time
-from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -14,98 +11,17 @@ DEFAULT_HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
     )
 }
-_TRANSPORT_SEMAPHORE = threading.Semaphore(1)
-_TRANSPORT_STATE_LOCK = threading.Lock()
-_TRANSPORT_BLOCKED_UNTIL = {}
-
-
 class ScraperUnavailableError(RuntimeError):
     pass
 
 
-def _transport_group(url):
-    hostname = (urlparse(url).hostname or "").lower()
-    if hostname.endswith(".senate.gov"):
-        return "senate.gov"
-    if hostname.endswith(".house.gov"):
-        return "house.gov"
-    return hostname
-
-
-def _unavailable_response(url, status_code=503):
-    response = requests.Response()
-    response.status_code = status_code
-    response.url = url
-    return response
-
-
-def fetch_response(url: str, headers=None, timeout=None, *, proxy_on_block=False):
-    """Fetch a page directly, optionally retrying access denials via ScrapingBee.
-
-    ScrapingBee is only a transport here: the requested URL and returned content
-    still come from the government website. Its API key is sent in a header so
-    request errors and logs cannot expose it in a URL.
-    """
+def fetch_response(url: str, headers=None, timeout=None):
+    """Fetch a page directly."""
     request_headers = dict(DEFAULT_HEADERS)
     if headers:
         request_headers.update(headers)
     request_timeout = timeout or Config.HTTP_TIMEOUT_SECONDS
-
-    try:
-        response = requests.get(url, headers=request_headers, timeout=request_timeout)
-    except requests.RequestException:
-        if not proxy_on_block or not Config.SCRAPINGBEE_API_KEY:
-            raise
-        response = None
-
-    if not proxy_on_block or not Config.SCRAPINGBEE_API_KEY:
-        return response
-    if response is not None and response.status_code not in {401, 403, 429}:
-        return response
-
-    transport_group = _transport_group(url)
-    with _TRANSPORT_SEMAPHORE:
-        with _TRANSPORT_STATE_LOCK:
-            blocked_until = _TRANSPORT_BLOCKED_UNTIL.get(transport_group, 0)
-        if blocked_until > time.monotonic():
-            return response if response is not None else _unavailable_response(url)
-
-        try:
-            proxy_response = requests.get(
-                "https://app.scrapingbee.com/api/v1",
-                params={
-                    "url": url,
-                    "render_js": "false",
-                    "premium_proxy": str(Config.SCRAPINGBEE_PREMIUM_PROXY).lower(),
-                    "country_code": "us",
-                    "transparent_status_code": "true",
-                },
-                headers={"Authorization": f"Bearer {Config.SCRAPINGBEE_API_KEY}"},
-                timeout=max(float(request_timeout), 60),
-            )
-        except requests.RequestException as exc:
-            raise ScraperUnavailableError(
-                f"The direct request was blocked and the configured scraping transport "
-                f"could not load {url}."
-            ) from exc
-
-        target_denied = (
-            proxy_response.status_code == 403
-            and (
-                proxy_response.headers.get("Spb-initial-status-code") == "403"
-                or "access denied" in proxy_response.text[:1000].lower()
-            )
-        )
-        if target_denied:
-            with _TRANSPORT_STATE_LOCK:
-                _TRANSPORT_BLOCKED_UNTIL[transport_group] = (
-                    time.monotonic() + Config.SCRAPINGBEE_CIRCUIT_BREAKER_SECONDS
-                )
-
-    # Consumers need the government URL for relative links and pagination, not
-    # the transport provider endpoint.
-    proxy_response.url = url
-    return proxy_response
+    return requests.get(url, headers=request_headers, timeout=request_timeout)
 
 
 def fetch_html(url: str, headers=None, timeout=None) -> str:

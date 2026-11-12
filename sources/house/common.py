@@ -51,7 +51,6 @@ def get_house_page(url, *, start_date=None, max_pages=8):
             url,
             headers=HOUSE_HEADERS,
             timeout=30,
-            proxy_on_block=True,
         )
     except (ScraperUnavailableError, requests.RequestException) as error:
         # Preserve the existing source contract: callers inspect status_code and
@@ -82,7 +81,6 @@ def get_house_page(url, *, start_date=None, max_pages=8):
                 next_url,
                 headers=HOUSE_HEADERS,
                 timeout=30,
-                proxy_on_block=True,
             )
         except (ScraperUnavailableError, requests.RequestException) as error:
             print(f"Error loading House source page {next_url}: {error}")
