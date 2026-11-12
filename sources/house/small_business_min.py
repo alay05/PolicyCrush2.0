@@ -1,4 +1,4 @@
-import requests
+from sources.house.common import get_house_page
 from bs4 import BeautifulSoup
 from datetime import datetime
 
@@ -7,7 +7,7 @@ def fetch_smb_min_articles(start_date=None):
     base_url = "https://democrats-smallbusiness.house.gov/"
     url = base_url + "news/"
 
-    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+    response = get_house_page(url, start_date=start_date)
     if response.status_code != 200:
         return results
 

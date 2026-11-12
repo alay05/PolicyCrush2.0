@@ -1,31 +1,30 @@
-import requests
+from sources.house.common import get_house_page
 from bs4 import BeautifulSoup
 from datetime import datetime
+from urllib.parse import urljoin
 
 def fetch_ovs_min_articles(start_date=None):
     results = []
     base_url = "https://oversightdemocrats.house.gov"
     url = f"{base_url}/news/press-releases"
 
-    response = requests.get(url, headers={
-        "User-Agent": "Mozilla/5.0"
-    })
+    response = get_house_page(url, start_date=start_date)
     if response.status_code != 200:
         return results
 
     soup = BeautifulSoup(response.text, "html.parser")
-    rows = soup.select("div.views-row.evo-views-row")
+    rows = soup.select("table#browser_table tr")
 
     for row in rows:
         try:
-            title_tag = row.select_one("div.h3.mt-0.font-weight-bold a")
-            date_tag = row.select_one("div.row .col-auto")
+            title_tag = row.select_one("td[headers='news-title'] a")
+            date_tag = row.select_one("td.date time[datetime]")
             if not title_tag or not date_tag:
                 continue
 
             title = title_tag.get_text(strip=True)
-            url = base_url + title_tag["href"]
-            pub_date = datetime.strptime(date_tag.text.strip(), "%B %d, %Y")
+            url = urljoin(base_url, title_tag["href"].strip())
+            pub_date = datetime.strptime(date_tag["datetime"], "%Y-%m-%d")
 
             if start_date and pub_date.date() < start_date:
                 continue

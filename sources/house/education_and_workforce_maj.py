@@ -1,14 +1,13 @@
-import requests
+from sources.house.common import get_house_page
 from bs4 import BeautifulSoup
 from datetime import datetime
+from urllib.parse import urljoin
 
 def fetch_eaw_maj_articles(start_date=None):
     results = []
     url = "https://edworkforce.house.gov/news"
 
-    response = requests.get(url, headers={
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-    })
+    response = get_house_page(url, start_date=start_date)
 
     if response.status_code != 200:
         return results
@@ -25,7 +24,7 @@ def fetch_eaw_maj_articles(start_date=None):
 
             title = title_tag.get_text(strip=True)
             href = title_tag.get("href", "")
-            full_url = "https://edworkforce.house.gov/news/" + href.lstrip("/")
+            full_url = urljoin("https://edworkforce.house.gov/", href)
 
             # Date
             date_tag = item.select_one("time")

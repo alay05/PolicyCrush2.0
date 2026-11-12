@@ -1,11 +1,11 @@
-import requests
+from sources.house.common import get_house_page
 from bs4 import BeautifulSoup
 from datetime import datetime
 
 def fetch_jec_min_articles(start_date=None):
     results = []
     url = "https://www.jec.senate.gov/public/index.cfm/democrats/media"
-    response = requests.get(url)
+    response = get_house_page(url, start_date=start_date)
     if response.status_code != 200:
         return results
 

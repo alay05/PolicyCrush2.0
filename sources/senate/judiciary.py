@@ -1,14 +1,13 @@
-import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
-from zoneinfo import ZoneInfo
+
+from sources.senate.common import absolute_url, get_senate_page, parse_datetime, parse_listing_items
 
 def fetch_jud_articles(start_date=None):
     base_url = "https://www.judiciary.senate.gov"
     results = []
 
     def parse_news(url, tag):
-        response = requests.get(url)
+        response = get_senate_page(url, start_date=start_date)
         if response.status_code != 200:
             return []
         soup = BeautifulSoup(response.text, "html.parser")
@@ -23,16 +22,14 @@ def fetch_jud_articles(start_date=None):
                 continue
 
             try:
-                pub_date = datetime.strptime(date_tag.get_text(strip=True), "%m.%d.%Y")
-            except ValueError:
+                pub_date = parse_datetime(date_tag.get_text(strip=True), "%m.%d.%Y")
+            except (TypeError, ValueError):
                 continue
 
             if start_date and pub_date.date() < start_date:
                 continue
 
-            url = link_tag["href"].strip()
-            if not url.startswith("http"):
-                url = base_url + url
+            url = absolute_url(base_url, link_tag.get("href"))
 
             items.append({
                 "title": title_tag.get_text(strip=True),
@@ -41,49 +38,19 @@ def fetch_jud_articles(start_date=None):
                 "tag": tag,
             })
 
-        return items
-
-    def parse_hearings():
-        url = base_url + "/committee-activity/hearings"
-        response = requests.get(url)
-        if response.status_code != 200:
-            return []
-        soup = BeautifulSoup(response.text, "html.parser")
-        items = []
-
-        for div in soup.select("div.LegislationList__item"):
-            title_tag = div.select_one("a.LegislationList__title")
-            time_tag = div.select_one("div.LegislationList__colDate time")
-
-            if not title_tag or not time_tag:
-                continue
-
-            try:
-                utc_dt = datetime.strptime(time_tag["datetime"], "%Y-%m-%dT%H:%M:%SZ")
-                utc_dt = utc_dt.replace(tzinfo=ZoneInfo("UTC"))
-                pub_date = utc_dt.astimezone(ZoneInfo("America/New_York"))
-            except ValueError:
-                continue
-
-            if start_date and pub_date.date() < start_date:
-                continue
-
-            url = title_tag["href"].strip()
-            if not url.startswith("http"):
-                url = base_url + url
-
-            items.append({
-                "title": title_tag.get_text(strip=True),
-                "url": url,
-                "date": pub_date,
-                "tag": "hearing",
-            })
-
-        return items
+        return items or parse_listing_items(
+            soup,
+            base_url=base_url,
+            tag=tag,
+            start_date=start_date,
+            row_selectors=("li.PageList__item", "div.PressBrowser__itemRow", "article"),
+            link_selectors=("a.ArticleBlockLink", "h2 a[href]", "h3 a[href]", "a[href]"),
+            date_selectors=("p.Heading--time", "[class*='date']"),
+            href_fragments=("/press/rep/releases/", "/press/dem/releases/"),
+        )
 
     results += parse_news("https://www.judiciary.senate.gov/press/majority?expanded=true", "majority")
     results += parse_news("https://www.judiciary.senate.gov/press/minority?expanded=true", "minority")
-    results += parse_hearings()
 
     return {
         "base_url": base_url,

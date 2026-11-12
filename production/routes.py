@@ -73,7 +73,7 @@ def _find_cached_item(source: str, item_id: str, cur=None):
     if source == "house":
         cache = session.get("house_cache") or {}
         for meta in (cache.get("committees") or {}).values():
-            for side in ("majority", "minority"):
+            for side in ("majority", "minority", "hearing"):
                 for item in meta.get(side, []):
                     if item.get("id") == item_id:
                         return item

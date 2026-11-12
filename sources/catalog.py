@@ -113,6 +113,22 @@ HOUSE_SOURCES = {
     },
 }
 
+HOUSE_COMMITTEE_URLS = {
+    "Appropriations": "https://appropriations.house.gov",
+    "Budget": "https://budget.house.gov",
+    "Education and Workforce": "https://edworkforce.house.gov",
+    "Energy and Commerce (E&C)": "https://energycommerce.house.gov",
+    "Homeland Security": "https://homeland.house.gov",
+    "Joint Economic": "https://www.jec.senate.gov",
+    "Judiciary": "https://judiciary.house.gov",
+    "Natural Resources": "https://naturalresources.house.gov",
+    "Oversight": "https://oversight.house.gov",
+    "Rules": "https://rules.house.gov",
+    "Small Business": "https://smallbusiness.house.gov",
+    "Veterans Affairs": "https://veterans.house.gov",
+    "Ways and Means": "https://waysandmeans.house.gov",
+}
+
 
 SENATE_SOURCES = {
     "Aging": fetch_age_articles,

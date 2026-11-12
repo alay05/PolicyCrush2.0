@@ -1,16 +1,13 @@
-import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
+
+from sources.senate.common import absolute_url, get_senate_page, parse_datetime, parse_listing_items
 
 def fetch_age_articles(start_date=None):
     base_url = "https://www.aging.senate.gov"
     results = []
 
-    def contains_accented_chars(text):
-        return any(char in text for char in "áéíóúñÁÉÍÓÚÑ")
-
     def parse_news(url, tag):
-        response = requests.get(url)
+        response = get_senate_page(url, start_date=start_date)
         if response.status_code != 200:
             return []
 
@@ -26,21 +23,21 @@ def fetch_age_articles(start_date=None):
                 continue
 
             try:
-                pub_date = datetime.strptime(date_tag["datetime"], "%Y-%m-%d")
-            except ValueError:
+                pub_date = parse_datetime(
+                    date_tag.get("datetime") or date_tag.get_text(strip=True),
+                    "%Y-%m-%d",
+                )
+            except (TypeError, ValueError):
                 continue
 
             if start_date and pub_date.date() < start_date:
                 continue
 
             title = link_tag.get_text(strip=True)
-            url = link_tag["href"].strip()
-            if not url.startswith("http"):
-                url = base_url + url
+            url = absolute_url(base_url, link_tag.get("href"))
 
-            # remove spanish (not foolproof, but works)
-            if contains_accented_chars(title):
-                continue
+            # Skip explicit Spanish-language duplicates without rejecting names
+            # and English releases that legitimately contain accented characters.
             spanish_keywords = ["aviso", "el presidente", "la miembro", "/press-releases/aviso-"]
             if any(keyword in title.lower() or keyword in url.lower() for keyword in spanish_keywords):
                 continue
@@ -52,57 +49,18 @@ def fetch_age_articles(start_date=None):
                 "tag": tag,
             })
 
-        return items
+        return items or parse_listing_items(
+            soup,
+            base_url=base_url,
+            tag=tag,
+            start_date=start_date,
+            row_selectors=("div.PressBrowser__itemRow", "article", "li.PageList__item"),
+            link_selectors=("h2 a[href]", "h3 a[href]", "a[href]"),
+            date_selectors=("[class*='date']",),
+        )
 
-    def parse_hearings():
-        url = base_url + "/hearings"
-        response = requests.get(url)
-        if response.status_code != 200:
-            return []
-
-        soup = BeautifulSoup(response.text, "html.parser")
-        blocks = soup.select("div.LegislationList__item")
-        items = []
-
-        for block in blocks:
-            title_tag = block.select_one("a.LegislationList__link")
-            time_tag = block.select_one("div.col-12.col-md-auto time")
-
-            if not title_tag or not time_tag:
-                continue
-
-            time_lines = [line.strip() for line in time_tag.get_text(separator="\n").splitlines() if line.strip()]
-            if len(time_lines) < 2:
-                continue
-
-            try:
-                date_str = time_lines[0]
-                time_str = time_lines[1].lower().replace("am", "AM").replace("pm", "PM")
-                dt = datetime.strptime(f"{date_str} {time_str}", "%m/%d/%y %I:%M%p")
-                dt = dt.replace(year=2000 + int(date_str.split('/')[2]))
-            except Exception:
-                continue
-
-            if start_date and dt.date() < start_date:
-                continue
-
-            title = title_tag.get_text(strip=True)
-            url = title_tag["href"].strip()
-            if not url.startswith("http"):
-                url = base_url + url
-
-            items.append({
-                "title": title,
-                "url": url,
-                "date": dt,
-                "tag": "hearing",
-            })
-
-        return items
-
-    results += parse_news(base_url + "/press-room/majority?expanded=false", "majority")
-    results += parse_news(base_url + "/press-room/minority?expanded=false", "minority")
-    results += parse_hearings()
+    results += parse_news(base_url + "/press-room/majority?expanded=true", "majority")
+    results += parse_news(base_url + "/press-room/minority?expanded=true", "minority")
 
     return {
         "base_url": base_url,

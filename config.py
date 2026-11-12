@@ -1,6 +1,11 @@
 import os
 import tempfile
 
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
 
 def env_flag(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
@@ -27,7 +32,21 @@ class Config:
     HEADLINE_OPENAI_MODEL = os.getenv("HEADLINE_OPENAI_MODEL", "gpt-4o-mini")
     MAILCHIMP_API_KEY = os.getenv("MAILCHIMP_API_KEY", "").strip()
     CONGRESS_API_KEY = os.getenv("CONGRESS_API_KEY", "").strip()
+    SCRAPINGBEE_API_KEY = os.getenv("SCRAPINGBEE_API_KEY", "").strip()
+    SCRAPINGBEE_PREMIUM_PROXY = env_flag("SCRAPINGBEE_PREMIUM_PROXY", True)
+    SCRAPINGBEE_CIRCUIT_BREAKER_SECONDS = int(
+        os.getenv("SCRAPINGBEE_CIRCUIT_BREAKER_SECONDS", "900")
+    )
 
     HTTP_TIMEOUT_SECONDS = float(os.getenv("HTTP_TIMEOUT_SECONDS", "30"))
+    CONGRESS_CACHE_TTL_SECONDS = int(os.getenv("CONGRESS_CACHE_TTL_SECONDS", "3600"))
+    CONGRESS_INITIAL_LOOKBACK_DAYS = int(
+        os.getenv("CONGRESS_INITIAL_LOOKBACK_DAYS", "120")
+    )
+    CONGRESS_API_MAX_WORKERS = int(os.getenv("CONGRESS_API_MAX_WORKERS", "8"))
+    CONGRESS_CACHE_DIR = os.getenv(
+        "CONGRESS_CACHE_DIR",
+        os.path.join(tempfile.gettempdir(), "policycrush-congress-cache"),
+    )
     SCRAPER_BROWSER_PROVIDER = os.getenv("SCRAPER_BROWSER_PROVIDER", "auto").strip().lower()
     ENABLE_SELENIUM_FALLBACK = env_flag("ENABLE_SELENIUM_FALLBACK", False)

@@ -4,6 +4,8 @@ from features.classify import classify
 
 from sources.messages import GmailAuthRequired, authenticate, get_messages, extract_html_from_email
 from sources.catalog import HOUSE_SOURCES, NEWS_SOURCES, SENATE_SOURCES
+from sources.house.hearings import fetch_house_hearings
+from sources.senate.hearings import fetch_senate_hearings
 
 
 def fetch_gmail_unread():
@@ -85,6 +87,11 @@ def _hid(url: str, committee: str, side: str) -> str:
 
 def fetch_house_bundle(start_date: datetime.date, use_openai: bool = False):
     out = {}
+    try:
+        hearing_results = fetch_house_hearings(start_date)
+    except Exception:
+        hearing_results = {}
+
     for committee, fns in HOUSE_SOURCES.items():
         try:
             maj = fns["majority"](start_date)
@@ -100,6 +107,7 @@ def fetch_house_bundle(start_date: datetime.date, use_openai: bool = False):
                         "date": a.get("date", ""),
                         "committee": committee,
                         "side": side,
+                        "tag": side,
                     }
                     if "suggestion" in a and a["suggestion"]:
                         item["suggestion"] = a["suggestion"]
@@ -111,6 +119,7 @@ def fetch_house_bundle(start_date: datetime.date, use_openai: bool = False):
             out[committee] = {
                 "majority": norm(maj, "majority"),
                 "minority": norm(mino, "minority"),
+                "hearing": norm(hearing_results.get(committee, []), "hearing"),
             }
         except Exception:
             continue
@@ -121,6 +130,11 @@ def _sid(url: str, committee: str, tag: str) -> str:
 
 def fetch_senate_bundle(start_date: datetime.date, use_openai: bool = False):
     out = {}
+    try:
+        hearing_results = fetch_senate_hearings(start_date)
+    except Exception:
+        hearing_results = {}
+
     for name, fetch in SENATE_SOURCES.items():
         try:
             payload = fetch(start_date)  # {"articles":[{title,url,date,tag?}], "base_url": "..."}
@@ -150,6 +164,19 @@ def fetch_senate_bundle(start_date: datetime.date, use_openai: bool = False):
                     hearing.append(item)
                 else:
                     majority.append(item)
+
+            for art in hearing_results.get(name, []):
+                item = {
+                    "id": _sid(art["url"], name, "hearing"),
+                    "title": art["title"],
+                    "url": art["url"],
+                    "date": art["date"].isoformat() if isinstance(art.get("date"), (date, datetime)) else art.get("date", ""),
+                    "committee": name,
+                    "tag": "hearing",
+                }
+                if use_openai:
+                    item["suggestion"] = classify(item["title"])
+                hearing.append(item)
 
             out[name] = {"url": base_url, "majority": majority, "minority": minority, "hearing": hearing}
         except Exception:

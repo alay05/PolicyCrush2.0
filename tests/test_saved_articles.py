@@ -87,6 +87,12 @@ class SavedArticlesTests(unittest.TestCase):
             "url": "https://example.com/house-release",
             "date": "2026-10-19",
         }
+        house_hearing = {
+            "title": "House hearing",
+            "url": "https://example.com/house-hearing",
+            "date": datetime(2026, 10, 22, 10, 0),
+            "tag": "hearing",
+        }
         senate_article = {
             "title": "Senate hearing",
             "url": "https://example.com/senate-hearing",
@@ -107,18 +113,39 @@ class SavedArticlesTests(unittest.TestCase):
             }
         }
 
-        with patch.object(house_routes, "HOUSE_SOURCES", house_sources):
-            self.client.post("/house", data={"start_date": "2026-10-01"})
+        with (
+            patch.object(house_routes, "HOUSE_SOURCES", house_sources),
+            patch.object(
+                house_routes,
+                "fetch_house_hearings",
+                return_value={"Appropriations": [house_hearing]},
+            ),
+        ):
+            house_page = self.client.post("/house", data={"start_date": "2026-10-01"})
+        self.assertIn(
+            b'href="https://appropriations.house.gov"',
+            house_page.data,
+        )
         house_id = prepare_article(house_article, "house", "Appropriations", "majority")["id"]
-        self.client.post("/saved-articles/add/house", data={"selected": house_id})
+        house_hearing_id = prepare_article(
+            house_hearing, "house", "Appropriations", "hearing"
+        )["id"]
+        self.client.post(
+            "/saved-articles/add/house",
+            data={"selected": [house_id, house_hearing_id]},
+        )
 
-        with patch.object(senate_routes, "SENATE_SOURCES", senate_sources):
+        with (
+            patch.object(senate_routes, "SENATE_SOURCES", senate_sources),
+            patch.object(senate_routes, "fetch_senate_hearings", return_value={}),
+        ):
             self.client.post("/senate", data={"start_date": "2026-10-01"})
         senate_id = prepare_article(senate_article, "senate", "Finance", "hearing")["id"]
         self.client.post("/saved-articles/add/senate", data={"selected": senate_id})
 
         saved_page = self.client.get("/saved-articles")
         self.assertIn("House — Appropriations — Majority".encode(), saved_page.data)
+        self.assertIn("House — Appropriations — Hearing".encode(), saved_page.data)
         self.assertIn("Senate — Finance — Hearing".encode(), saved_page.data)
         self.assertLess(saved_page.data.index(b"Senate hearing"), saved_page.data.index(b"House release"))
 

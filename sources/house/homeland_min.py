@@ -1,4 +1,4 @@
-import requests
+from sources.house.common import get_house_page
 from bs4 import BeautifulSoup
 from datetime import datetime
 
@@ -6,9 +6,7 @@ def fetch_home_min_articles(start_date=None):
     results = []
     url = "https://democrats-homeland.house.gov/news/press-releases/table/"
 
-    response = requests.get(url, headers={
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
-    })
+    response = get_house_page(url, start_date=start_date)
     if response.status_code != 200:
         return results
 

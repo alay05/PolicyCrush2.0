@@ -1,13 +1,16 @@
-import requests
-from bs4 import BeautifulSoup
+import re
 from datetime import datetime
+
+from bs4 import BeautifulSoup
+
+from sources.senate.common import absolute_url, get_senate_page, parse_datetime, parse_listing_items
 
 def fetch_home_articles(start_date=None):
     base_url = "https://www.hsgac.senate.gov"
     results = []
 
     def parse_news(url, tag):
-        response = requests.get(url)
+        response = get_senate_page(url, start_date=start_date)
         if response.status_code != 200:
             return []
         soup = BeautifulSoup(response.text, "html.parser")
@@ -19,7 +22,7 @@ def fetch_home_articles(start_date=None):
         for block in blocks:
             # URL
             link_tag = block.select_one("a.jet-engine-listing-overlay-link")
-            url = link_tag["href"].strip() if link_tag else None
+            url = absolute_url(base_url, link_tag.get("href")) if link_tag else ""
             if not url:
                 continue
 
@@ -40,15 +43,33 @@ def fetch_home_articles(start_date=None):
                 day_text = day_tag.get_text(strip=True)
                 month_number = datetime.strptime(month_text, "%b").month
 
+                explicit_date = month_tag.get("datetime") or day_tag.get("datetime")
+                if explicit_date and re.search(r"\b\d{4}\b", str(explicit_date)):
+                    try:
+                        parsed_date = parse_datetime(explicit_date)
+                    except ValueError:
+                        parsed_date = None
+                    if parsed_date and parsed_date.year > 1900:
+                        pub_date = parsed_date
+                        previous_month = pub_date.month
+                        listing_year = pub_date.year
+                    else:
+                        pub_date = None
+                else:
+                    pub_date = None
+
                 # Listing cards expose month/day only. The feed is newest-to-oldest,
                 # so if the month increases (Jan -> Dec) we've crossed into the prior year.
-                if previous_month is not None and month_number > previous_month:
-                    listing_year -= 1
+                if pub_date is None:
+                    if previous_month is None and month_number - datetime.now().month > 6:
+                        listing_year -= 1
+                    elif previous_month is not None and month_number > previous_month:
+                        listing_year -= 1
 
-                raw_date = f"{month_text} {day_text} {listing_year}"
-                pub_date = datetime.strptime(raw_date, "%b %d %Y")
-                previous_month = month_number
-            except ValueError:
+                    raw_date = f"{month_text} {day_text} {listing_year}"
+                    pub_date = parse_datetime(raw_date, "%b %d %Y", "%B %d %Y")
+                    previous_month = month_number
+            except (TypeError, ValueError):
                 continue
 
             if start_date and pub_date.date() < start_date:
@@ -61,57 +82,18 @@ def fetch_home_articles(start_date=None):
                 "tag": tag,
             })
 
-        return items
-
-    def parse_hearings():
-        url = base_url + "/hearings"
-        response = requests.get(url)
-        if response.status_code != 200:
-            return []
-
-        soup = BeautifulSoup(response.text, "html.parser")
-        blocks = soup.select("div.jet-listing-grid__item")
-        items = []
-
-        for block in blocks:
-            title_tag = block.select_one("h3.jet-listing-dynamic-field__content a")
-            date_tag = block.select_one("div.elementor-element-1c6a5ff .jet-listing-dynamic-field__content")
-            time_tag = block.select_one("div.elementor-element-930df5a .jet-listing-dynamic-field__content")
-
-            if not title_tag or not date_tag:
-                continue
-
-            try:
-                date_str = date_tag.get_text(strip=True)
-                time_str = time_tag.get_text(strip=True).lower().replace(" ", "")
-                dt = datetime.strptime(date_str + time_str, "%m/%d/%Y%I:%M%p")
-            except Exception:
-                try:
-                    dt = datetime.strptime(date_str, "%m/%d/%Y")
-                except ValueError:
-                    continue
-
-            if start_date and dt.date() < start_date:
-                continue
-
-            title = title_tag.get_text(strip=True)
-            url = title_tag["href"].strip()
-            if not url.startswith("http"):
-                url = base_url + url
-
-            items.append({
-                "title": title,
-                "url": url,
-                "date": dt,
-                "tag": "hearing",
-            })
-
-        return items
-
+        return items or parse_listing_items(
+            soup,
+            base_url=base_url,
+            tag=tag,
+            start_date=start_date,
+            row_selectors=("div.jet-listing-grid__item", "article"),
+            link_selectors=("a.jet-engine-listing-overlay-link", "h2 a[href]", "h3 a[href]", "a[href]"),
+            date_selectors=("[class*='date']", "[class*='month']"),
+        )
 
     results += parse_news("https://www.hsgac.senate.gov/media/majority-news/", "majority")
     results += parse_news("https://www.hsgac.senate.gov/media/minority-news/", "minority")
-    results += parse_hearings()
 
     return {
         "base_url": base_url,

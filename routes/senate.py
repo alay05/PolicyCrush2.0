@@ -1,11 +1,15 @@
-from flask import Blueprint, render_template, request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+
+from flask import Blueprint, render_template, request
 
 from features.classify import classify
 from routes.saved_articles import get_manual_pull, prepare_article, store_manual_pull
 from sources.catalog import SENATE_SOURCES
+from sources.senate.hearings import fetch_senate_hearings
 
 senate = Blueprint("senate", __name__)
+
 
 @senate.route("/senate", methods=["GET", "POST"])
 def senate_view():
@@ -34,9 +38,31 @@ def senate_view():
 
         if not error and start_date:
             cached_items = []
-            for name, fetch in SENATE_SOURCES.items():
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                hearing_future = executor.submit(fetch_senate_hearings, start_date)
+                source_futures = {
+                    name: executor.submit(fetch, start_date)
+                    for name, fetch in SENATE_SOURCES.items()
+                }
+
                 try:
-                    payload = fetch(start_date)
+                    hearing_results = hearing_future.result()
+                except Exception as e:
+                    print(f"Error loading Senate hearings from Congress.gov: {e}")
+                    hearing_results = {}
+
+                source_payloads = {}
+                for name, future in source_futures.items():
+                    try:
+                        source_payloads[name] = future.result()
+                    except Exception as e:
+                        print(f"Error loading {name}: {e}")
+
+            for name in SENATE_SOURCES:
+                try:
+                    payload = source_payloads.get(name)
+                    if not payload:
+                        continue
                     articles = payload["articles"]
                     base_url = payload["base_url"]
 
@@ -55,6 +81,13 @@ def senate_view():
                             prepared = prepare_article(article, "senate", name, tag)
                             grouped[tag].append(prepared)
                             cached_items.append(prepared)
+
+                    for article in hearing_results.get(name, []):
+                        if use_openai:
+                            article["suggestion"] = classify(article["title"])
+                        prepared = prepare_article(article, "senate", name, "hearing")
+                        grouped["hearing"].append(prepared)
+                        cached_items.append(prepared)
 
                     committees[name] = grouped
                 except Exception as e:
