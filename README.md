@@ -2,6 +2,8 @@
 
 Active repository for the PolicyCrush Automation Dashboard.
 
+The home page links to Main Newsletter, W2W4, Daily, Senate, House, and AddEvent (Manual). Main Newsletter uses saved articles, headline generation/review, and Mailchimp draft creation; W2W4 uses calendar pulls and event headline generation/review.
+
 ## Deployment notes
 
 This app now expects server-side sessions. Local development uses `Flask-Session` with filesystem storage by default, which is more durable than the previous in-memory caches and avoids losing state between requests in a hosted backend.
@@ -9,8 +11,8 @@ This app now expects server-side sessions. Local development uses `Flask-Session
 Recommended hosted shape:
 
 - `Vercel` can run the Flask app directly from `app.py`.
-- The production workflow still needs durable server-side session storage, so a Vercel deployment should include a Blob store token.
-- Manual fallback in the Production News step remains the fallback for blocked sources like HHS.
+- The newsletter workflows need durable server-side session storage, so a Vercel deployment should include a Blob store token.
+- Articles from unavailable sources can be added through Main Newsletter's manual article form.
 
 ### Vercel setup
 
@@ -34,12 +36,11 @@ Before deploying to Vercel:
 3. Set any app secrets you already use locally, including `OPENAI_API_KEY` when suggestions are enabled.
 4. Set `CONGRESS_API_KEY` for Senate and Joint Economic hearings.
 5. Optionally set `SCRAPINGBEE_API_KEY` to try a paid transport when committee sites reject normal requests. Akamai may still reject the proxied request.
-6. Do not rely on local-only files like `credentials.json` and `token.pickle` unless you replace those flows with a hosted-safe auth path.
 
 ## Environment variables
 
 - `FLASK_SECRET_KEY`: required outside local development.
-- `BLOB_READ_WRITE_TOKEN`: required on Vercel for durable production workflow sessions.
+- `BLOB_READ_WRITE_TOKEN`: required on Vercel for durable newsletter workflow sessions.
 - `OPENAI_API_KEY`: enables article suggestion classification, categorization, and headline generation.
 - `OPENAI_MODEL`: optional override for the classifier model. Default is `gpt-3.5-turbo` to preserve current behavior.
 - `HEADLINE_OPENAI_MODEL`: optional model used for structured headline generation. Defaults to `gpt-4o-mini`.
@@ -66,7 +67,7 @@ News sources that previously hard-required `ChromeDriver` now use a shared loade
 2. Fall back to `Playwright` when the expected page markup is missing.
 3. Optionally fall back to `Selenium` only when explicitly enabled.
 
-If a hosted environment still blocks one of those sources, the `/production/news` screen now surfaces a manual fallback path instead of silently dropping the source.
+If a hosted environment still blocks one of those sources, articles can be entered manually on Main Newsletter (`/saved-articles`).
 
 ## Committee sources
 

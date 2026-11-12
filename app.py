@@ -1,7 +1,6 @@
 from flask import Flask, render_template
 
 from config import Config
-from routes.gmail import gmail
 from routes.news import news
 from routes.senate import senate
 from routes.house import house
@@ -9,8 +8,6 @@ from routes.saved_articles import saved_articles
 from routes.add_event import add_event
 from routes.add_event_pull import add_event_pull
 from headlines.routes import headlines
-
-from production.routes import production
 
 from features.pretty_date import pretty_date
 from session_backend import configure_session
@@ -29,7 +26,6 @@ def asset_helpers():
 
     return {"asset_url": asset_url}
 
-app.register_blueprint(gmail)
 app.register_blueprint(news)
 app.register_blueprint(house)
 app.register_blueprint(senate)
@@ -37,8 +33,6 @@ app.register_blueprint(saved_articles)
 app.register_blueprint(add_event)
 app.register_blueprint(add_event_pull)
 app.register_blueprint(headlines, url_prefix="/headlines")
-
-app.register_blueprint(production, url_prefix="/production")
 
 app.jinja_env.filters["pretty_date"] = pretty_date
 

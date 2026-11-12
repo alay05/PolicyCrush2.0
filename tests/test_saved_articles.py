@@ -37,7 +37,11 @@ class SavedArticlesTests(unittest.TestCase):
         self.assertIn(b'href="/add-event"', response.data)
         self.assertNotIn(b'href="/gmail"', response.data)
         self.assertNotIn(b">START<", response.data)
-        self.assertEqual(self.client.get("/production/start").status_code, 200)
+        self.assertEqual(self.client.get("/production/start").status_code, 404)
+        self.assertEqual(self.client.get("/gmail").status_code, 404)
+        self.assertFalse(
+            {"gmail", "production"}.intersection(app.blueprints)
+        )
 
     def test_daily_selection_is_saved_once_and_can_be_removed(self):
         raw_article = {
