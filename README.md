@@ -10,7 +10,7 @@ This app now expects server-side sessions. Local development uses `Flask-Session
 
 Recommended hosted shape:
 
-- `Vercel` can run the Flask app directly from `app.py`.
+- `Vercel` runs the Flask app directly from `app.py`, with native routing and a `300`-second function limit. Do not add a catch-all rewrite to `/api/index`: Vercel passes that rewritten path to Flask, which has no matching route and returns 404. Files in `public/assets/` are served directly by Vercel.
 - The newsletter workflows need durable server-side session storage, so a Vercel deployment should include a Blob store token.
 - Articles from unavailable sources can be added through Main Newsletter's manual article form.
 
