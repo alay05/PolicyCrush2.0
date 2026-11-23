@@ -118,6 +118,11 @@ def generate_headline_records(articles: list[dict]) -> list[dict]:
     instructions = (
         "You edit headlines for a concise U.S. healthcare policy newsletter. "
         "Rewrite every supplied original headline in the style demonstrated by the examples. "
+        "For House and Senate articles, the source field identifies the chamber, committee, "
+        "and majority or minority side when available. Use this context for accurate attribution; "
+        "include those details in the headline when they add useful clarity, but do not force "
+        "them into every headline. Do not treat one side's statement as a position of the full "
+        "committee or infer a political party from majority/minority status alone. "
         "Preserve factual meaning, names, party/state/district identifiers, bill numbers, agencies, "
         "program names, dollar amounts, and other material specifics. Do not invent facts. "
         "Use title case and return each input ID exactly once. Assign exactly one allowed category. "
