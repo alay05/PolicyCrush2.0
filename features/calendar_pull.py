@@ -147,38 +147,24 @@ def _extract_first_url(text: str | None) -> str | None:
 # ---- Calendar lookups --------------------------------------------------------
 
 def resolve_calendar_id(session: requests.Session, calendar_key: str) -> str | None:
-    """
-    Resolve numeric calendar_id from unique_key (e.g., 'GT179952').
-    Falls back gracefully if not found.
-    """
-    # Try direct (some setups allow /calendars/{unique_key})
-    try:
-        resp = session.get(f"{API_BASE}/calendars/{calendar_key}", timeout=20)
-        if resp.ok:
-            data = resp.json() or {}
-            cal = data.get("calendar") if isinstance(data.get("calendar"), dict) else data
-            if isinstance(cal, dict) and "id" in cal:
-                return str(cal["id"])
-            if "id" in data:
-                return str(data["id"])
-    except Exception:
-        pass
-
-    # Try search
-    try:
-        resp = session.get(f"{API_BASE}/calendars", params={"q": calendar_key, "page_size": 20}, timeout=20)
-        if resp.ok:
-            data = resp.json() or {}
-            items = data.get("calendars") or data.get("calendar") or []
-            if isinstance(items, list) and items:
-                for c in items:
-                    if str(c.get("unique_key") or "").strip() == calendar_key:
-                        return str(c.get("id"))
-                return str(items[0].get("id"))
-    except Exception:
-        pass
-
-    return None
+    """Resolve an exact calendar key; never fall back to another calendar."""
+    # The API retrieves calendars by ID, so enumerate to match the public key.
+    page = 1
+    while True:
+        response = session.get(
+            f"{API_BASE}/calendars", params={"page": page, "page_size": 20}, timeout=20,
+        )
+        response.raise_for_status()
+        data = response.json()
+        items = data.get("calendars") or data.get("calendar") or []
+        if not isinstance(items, list):
+            return None
+        for calendar in items:
+            if str(calendar.get("unique_key") or "").lower() == calendar_key.lower():
+                return str(calendar["id"]) if calendar.get("id") else None
+        if len(items) < 20:
+            return None
+        page += 1
 
 
 # ---- Data model --------------------------------------------------------------
@@ -325,7 +311,7 @@ def search_events_between(
         "datetime_max": dt_max_str,
     }
     if cal_id:
-        params["calendar_id"] = cal_id
+        params["calendar_ids"] = cal_id
 
     while True:
         params["page"] = page

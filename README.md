@@ -46,6 +46,9 @@ Before deploying to Vercel:
 - `MAILCHIMP_API_KEY`: enables Main Newsletter and W2W4 draft creation in Mailchimp. Keep this server-side; the data center is read from the key suffix.
 - `MAILCHIMP_TEMPLATE_ID`: defaults to `10001540`, **PolicyCrush Automation - Editable Layout**, a separate saved copy of the tool's existing newsletter design. Drafts populate its `greeting`, `body`, and `footnote` regions through the template API to retain Mailchimp's visual content editor. This preserves the existing custom template editor, not the new block-based builder. For another Mailchimp account, create a saved template from `templates/mailchimp/main_newsletter.html` (render it with an empty `sections` list first) and override this ID. Keep the saved template and local layout in sync when changing the design. Older HTML-only drafts offer **Update Mailchimp Draft** to convert them after the existing overwrite confirmation.
 - `CONGRESS_API_KEY`: required for Senate and Joint Economic hearing calendars. Get a free key from https://api.congress.gov/sign-up/.
+- `ADDEVENT_API_KEY`: required to add events and pull the W2W4 calendar.
+- `ADDEVENT_CALENDAR_KEY`: target calendar's public key; defaults to `GT179952`.
+- `ADDEVENT_CALENDAR_ID`: optional API calendar ID override for event creation. If omitted, AddEvent (Manual) resolves the configured public key to an exact calendar match.
 - `CONGRESS_CACHE_TTL_SECONDS`: optional Congress.gov meeting-cache refresh interval. Defaults to one hour.
 - `CONGRESS_INITIAL_LOOKBACK_DAYS`: update-date lookback used to seed a hearing cache around the requested date. Defaults to `120`; requesting an older date expands the cache backward.
 - `CONGRESS_API_MAX_WORKERS`: optional bounded concurrency for the initial Congress.gov meeting index. Defaults to `8`.
@@ -67,6 +70,8 @@ News sources that previously hard-required `ChromeDriver` now use a shared loade
 If a hosted environment still blocks one of those sources, articles can be entered manually on Main Newsletter (`/saved-articles`).
 
 ## Committee sources
+
+AddEvent (Manual) accepts Congress.gov event URLs and House Committee Repository `ByEvent.aspx?EventID=...` URLs directly. It reads the official event title, date, time, and location without AI extraction, converts Senate times to Eastern time, and assigns a one-hour duration. The original link is saved in the description. Reimporting the same source within three hours of its existing start time shows **Already in Calendar**. A failed duplicate lookup stops creation so retrying does not silently bypass the check.
 
 - House hearings use the official House Committee Repository calendar. Senate and Joint Economic hearings use the official Congress.gov API; later pulls reuse cached meeting details.
 - Local meeting details are cached under the system temporary directory. When `BLOB_READ_WRITE_TOKEN` is configured, Vercel Blob also stores the cache so cold function instances do not repeatedly consume the Congress.gov API quota.

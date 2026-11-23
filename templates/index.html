@@ -27,15 +27,7 @@
       </div>
       <div class="nav-buttons home-tool-buttons">
         <a href="{{ url_for('senate.senate_view') }}"><button>Senate</button></a>
-        <div
-          class="home-tool-disabled"
-          aria-disabled="true"
-          aria-label="AddEvent Manual — out of order"
-          title="This tool is temporarily unavailable"
-        >
-          <button type="button" disabled>AddEvent (Manual)</button>
-          <span>Out of order</span>
-        </div>
+        <a href="{{ url_for('add_event.hearing_form') }}"><button>AddEvent (Manual)</button></a>
       </div>
     </section>
   </div>
