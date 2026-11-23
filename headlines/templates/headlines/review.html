@@ -46,6 +46,12 @@
                   {{ article.date | pretty_date(article.section == 'hearing') }} · {{ article.source_label }}
                 {% endif %}
               </p>
+              {% if calendar_import_url and article.section == 'hearing' %}
+                <div class="headline-calendar-action">
+                  <button type="button" class="headline-calendar-button" data-article-id="{{ article.id }}" data-import-url="{{ calendar_import_url }}">Add to Calendar</button>
+                  <span class="headline-calendar-status" role="status" aria-live="polite"></span>
+                </div>
+              {% endif %}
             </div>
           </article>
           {% if nesting_enabled %}
@@ -103,6 +109,9 @@
     {% endif %}
   </div>
 
+  {% if calendar_import_url %}
+    <script src="{{ asset_url('headline-calendar.js') }}"></script>
+  {% endif %}
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js" crossorigin="anonymous"></script>
   <script src="{{ asset_url('headline-drag.js') }}"></script>
   <script>

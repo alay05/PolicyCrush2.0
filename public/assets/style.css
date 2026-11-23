@@ -1129,6 +1129,33 @@ input.article-check[type="checkbox"] {
   overflow-wrap: anywhere;
 }
 
+.headline-category:not([data-category="Events"]) .headline-calendar-action {
+  display: none;
+}
+
+.headline-calendar-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.headline-calendar-button {
+  background: #1768ac;
+  color: white;
+  padding: 5px 10px;
+  font-size: 0.8rem;
+}
+
+.headline-calendar-button:hover:enabled {
+  background: #12528a;
+}
+
+.headline-calendar-status {
+  font-size: 0.85rem;
+}
+
 .status-message.error {
   border-color: #fecaca;
   background: #fef2f2;

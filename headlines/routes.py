@@ -1,9 +1,10 @@
 from collections import OrderedDict
 from datetime import datetime
 
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 
 from config import Config
+from features.calendar import EventImportError, create_event_addevent, event_from_url
 from headlines.generator import HeadlineGenerationError, generate_headline_records
 from headlines.state import ALL_CATEGORIES, get_current_workflow
 from mailchimp.client import MailchimpClient
@@ -113,6 +114,7 @@ def review():
         move_url=url_for("headlines.move"),
         nesting_enabled=True,
         rename_url=url_for("headlines.rename"),
+        calendar_import_url=url_for("headlines.add_to_calendar"),
         generate_url=url_for("headlines.generate"),
         back_url=url_for("saved_articles.saved_articles_view"),
         back_label="← Saved Articles",
@@ -122,6 +124,32 @@ def review():
         mailchimp_stale=mailchimp_draft_stale(mailchimp_draft, content_hash),
         mailchimp_action_url=url_for("headlines.mailchimp_draft"),
     )
+
+
+@headlines.post("/add-to-calendar")
+def add_to_calendar():
+    """Import a reviewed hearing without changing newsletter content or draft state."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not payload.get("id"):
+        return jsonify(ok=False, error="Missing article ID"), 400
+    article_id = str(payload["id"])
+    workflow = get_current_workflow()
+    if not workflow:
+        return jsonify(ok=False, error="Generate headlines before adding a hearing to the calendar."), 409
+    article = workflow["items"].get(article_id)
+    if not article:
+        return jsonify(ok=False, error="Article not found in the current review."), 404
+    if article.get("section") != "hearing" or article_id not in workflow["index"].get("Events", []):
+        return jsonify(ok=False, error="Only hearings in Events can be added to the calendar."), 400
+    try:
+        event = event_from_url(article.get("url") or "")
+        saved = create_event_addevent(event)
+    except EventImportError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    except Exception:
+        current_app.logger.exception("Headline review calendar import failed")
+        return jsonify(ok=False, error="The event could not be imported. Check the calendar before retrying."), 502
+    return jsonify(ok=True, deduped=bool(saved.get("deduped")))
 
 
 @headlines.post("/mailchimp")
