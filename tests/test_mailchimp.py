@@ -231,6 +231,43 @@ class MailchimpWorkflowTests(unittest.TestCase):
         self.assertEqual(len(draft["content_hash"]), 64)
         self.assertFalse(draft["incomplete"])
 
+    @patch("headlines.routes.MailchimpClient")
+    def test_attaching_article_updates_existing_draft_with_original_linked_bullet(self, client_class):
+        client = client_class.return_value
+        client.create_campaign.return_value = {"id": "campaign-1", "web_id": 123}
+        client.editor_url.return_value = "https://example.com/editor"
+        child = prepare_article({
+            "title": "Original child", "url": "https://example.com/child?a=1&b=2",
+            "date": "2026-10-27",
+        }, "news", "HHS")
+        with self.client.session_transaction() as current_session:
+            current_session['saved_articles'].append(child)
+            workflow = current_session['headline_workflow']
+            workflow['items'][child['id']] = {
+                **child, 'headline': 'HHS & CMS Publish <Update>', 'link_text': 'Publish',
+            }
+            workflow['index']['Medicare'].append(child['id'])
+        self.client.post('/headlines/mailchimp')
+        self.client.post('/headlines/move', json={
+            'id': child['id'], 'parent_id': self.article['id'],
+            'to_category': 'Medicare', 'new_index': 0,
+        })
+        # Grouping alone changes the draft content and requires the existing update confirmation.
+        self.client.post('/headlines/mailchimp')
+        self.assertEqual(client.set_campaign_content.call_count, 1)
+        client.get_campaign.return_value = {'status': 'save'}
+        self.client.post('/headlines/mailchimp', data={'confirm': '1'})
+        client.create_campaign.assert_called_once()
+        self.assertEqual(client.set_campaign_content.call_count, 2)
+        _, sections = client.set_campaign_content.call_args.args
+        body = BeautifulSoup(sections['body'], 'html.parser')
+        self.assertEqual(len(body.select('p')), 1)
+        self.assertEqual(len(body.select('li')), 1)
+        self.assertEqual(body.li.get_text(), 'HHS & CMS Publish <Update>')
+        self.assertEqual(body.li.a.text, 'Publish')
+        self.assertEqual(body.li.a['href'], child['url'])
+        self.assertIsNone(body.li.find('update'))
+
     def test_edited_content_updates_same_saved_draft_after_confirmation(self):
         create_client = Mock()
         create_client.create_campaign.return_value = {

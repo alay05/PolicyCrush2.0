@@ -279,6 +279,13 @@
                   <h1>{{ section.label }}</h1>
                   {% for article in section["items"] %}
                     <p>{% if article.event_time %}<strong>{{ article.event_time }}</strong> - {% endif %}{{ article.headline_html }}</p>
+                    {% if article.sub_articles %}
+                      <ul style="list-style-type:disc;margin:0 0 16px;padding-left:40px;">
+                        {% for child in article.sub_articles %}
+                          <li style="list-style-type:disc;">{% if child.event_time %}<strong>{{ child.event_time }}</strong> - {% endif %}{{ child.headline_html }}</li>
+                        {% endfor %}
+                      </ul>
+                    {% endif %}
                   {% endfor %}
                 {% endfor %}
               {% endblock %}</td>

@@ -19,11 +19,13 @@
     <p class="headline-built-at">Generated {{ built_at | pretty_date(true) }}</p>
   {% endif %}
 
-  {% for label, items in categories.items() %}
-    <section class="source headline-category" data-category="{{ label }}">
-      <h2>{{ label }}</h2>
-      <div class="article-list headline-article-list">
-        {% for article in items %}
+  {% if nesting_enabled %}
+    <p class="headline-drag-help">Drag by ☰. Drop on a main article's blue outline to attach a sub-article; drop at a blue line above or below an article to reorder. Articles stay in place until you release. Drag a sub-article back into a category to detach it. Main articles move with their sub-articles.</p>
+  {% endif %}
+  <p id="headline-save-status" role="status" aria-live="polite"></p>
+
+  {% macro article_card(article) %}
+        <div class="headline-group" data-id="{{ article.id }}">
           <article class="article headline-card" data-id="{{ article.id }}">
             <div class="headline-drag-handle" title="Move article">☰</div>
             <div class="headline-card-content">
@@ -46,7 +48,21 @@
               </p>
             </div>
           </article>
-        {% endfor %}
+          {% if nesting_enabled %}
+            <div class="headline-children headline-sortable" data-parent-id="{{ article.id }}" aria-label="Sub-articles">
+              {%- for child in article.sub_articles -%}{{ article_card(child) }}{%- endfor -%}
+            </div>
+          {% endif %}
+        </div>
+  {% endmacro %}
+
+  {% for label, items in categories.items() %}
+    <section class="source headline-category" data-category="{{ label }}">
+      <h2>{{ label }}</h2>
+      <div class="article-list headline-article-list headline-sortable">
+        {%- for article in items -%}
+          {{ article_card(article) }}
+        {%- endfor -%}
       </div>
     </section>
   {% endfor %}
@@ -75,8 +91,8 @@
             <input type="hidden" name="create_replacement" value="1">
             <button type="submit" class="btn-primary">Create Replacement Draft →</button>
           </form>
-        {% elif mailchimp_stale or mailchimp_draft.incomplete %}
-          <form method="POST" action="{{ mailchimp_action_url }}" class="mailchimp-draft-form" data-confirm="Overwrite the existing Mailchimp draft with the current finalized newsletter?">
+        {% else %}
+          <form method="POST" action="{{ mailchimp_action_url }}" class="mailchimp-draft-form" data-update-draft {% if not mailchimp_stale and not mailchimp_draft.incomplete %}hidden{% endif %} data-confirm="Overwrite the existing Mailchimp draft with the current finalized newsletter?">
             <input type="hidden" name="confirm" value="1">
             <button type="submit" class="btn-primary">Update Mailchimp Draft →</button>
           </form>
@@ -88,45 +104,12 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js" crossorigin="anonymous"></script>
+  <script src="{{ asset_url('headline-drag.js') }}"></script>
   <script>
-    document.querySelectorAll('.headline-article-list').forEach((list) => {
-      new Sortable(list, {
-        group: 'headline-categories',
-        animation: 150,
-        handle: '.headline-drag-handle',
-        ghostClass: 'dragging',
-        filter: 'a, button, input',
-        preventOnFilter: false,
-        onAdd: persistMove,
-        onUpdate: persistMove,
-      });
+    const headlineDrag = setupHeadlineDrag({
+      moveUrl: {{ move_url | tojson }},
+      nestingEnabled: {{ (nesting_enabled | default(false)) | tojson }},
     });
-
-    async function persistMove(event) {
-      const item = event.item;
-      const fromCategory = event.from.closest('.headline-category')?.dataset.category || '';
-      const toCategory = event.to.closest('.headline-category')?.dataset.category || '';
-      const newIndex = Array.prototype.indexOf.call(event.to.children, item);
-
-      try {
-        const response = await fetch("{{ move_url }}", {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            id: item.dataset.id,
-            from_category: fromCategory,
-            to_category: toCategory,
-            new_index: newIndex,
-          }),
-        });
-        const data = await response.json();
-        if (!response.ok || !data.ok) throw new Error(data.error || 'Move failed');
-      } catch (error) {
-        if (event.oldIndex >= event.from.children.length) event.from.appendChild(item);
-        else event.from.insertBefore(item, event.from.children[event.oldIndex]);
-        alert("Couldn't save that move. Please try again.");
-      }
-    }
 
     document.addEventListener('click', async (event) => {
       const editButton = event.target.closest('.edit-title-btn');
@@ -173,6 +156,7 @@
     }
 
     async function saveHeadline(card) {
+      if (headlineDrag.isSaving()) return;
       const input = card.querySelector('.edit-input');
       const title = card.querySelector('.article-title');
       const saveButton = card.querySelector('.save-title-btn');
@@ -184,6 +168,7 @@
       }
 
       saveButton.disabled = true;
+      headlineDrag.setSaving(true);
       try {
         const response = await fetch("{{ rename_url }}", {
           method: 'POST',
@@ -194,10 +179,12 @@
         if (!response.ok || !data.ok) throw new Error(data.error || 'Save failed');
         title.textContent = headline;
         setEditing(card, false);
+        document.querySelector('[data-update-draft]')?.removeAttribute('hidden');
       } catch (error) {
         alert(`Couldn't save headline: ${error.message}`);
       } finally {
         saveButton.disabled = false;
+        headlineDrag.setSaving(false);
       }
     }
 

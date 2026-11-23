@@ -59,6 +59,11 @@ def _newsletter_context(categories) -> dict:
                     {
                         "headline_html": _linked_headline(article),
                         "event_time": _event_time(article) if label == SPECIAL_CALENDAR else "",
+                        "sub_articles": [
+                            {"headline_html": _linked_headline(child),
+                             "event_time": _event_time(child) if label == SPECIAL_CALENDAR else ""}
+                            for child in article.get("sub_articles", [])
+                        ],
                     }
                     for article in items
                 ],

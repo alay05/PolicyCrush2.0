@@ -16,10 +16,18 @@ headlines = Blueprint("headlines", __name__, template_folder="templates")
 def _workflow_categories(workflow) -> OrderedDict:
     items = workflow["items"]
     index = workflow["index"]
+    parents = workflow.get("parents") or {}
     return OrderedDict(
         (
             category,
-            [items[article_id] for article_id in index.get(category, []) if article_id in items],
+            [
+                {**items[article_id], "sub_articles": [
+                    items[child_id] for child_id in index.get(category, [])
+                    if child_id in items and parents.get(child_id) == article_id
+                ]}
+                for article_id in index.get(category, [])
+                if article_id in items and article_id not in parents
+            ],
         )
         for category in ALL_CATEGORIES
     )
@@ -85,6 +93,7 @@ def generate():
         "built_at": datetime.now().isoformat(timespec="seconds"),
         "items": items,
         "index": index,
+        "parents": dict(workflow.get("parents") or {}) if workflow else {},
     }
     if workflow and workflow.get("mailchimp_draft"):
         next_workflow["mailchimp_draft"] = workflow["mailchimp_draft"]
@@ -114,6 +123,7 @@ def review():
         built_at=workflow.get("built_at"),
         pending_count=pending_count,
         move_url=url_for("headlines.move"),
+        nesting_enabled=True,
         rename_url=url_for("headlines.rename"),
         generate_url=url_for("headlines.generate"),
         back_url=url_for("saved_articles.saved_articles_view"),
@@ -261,8 +271,8 @@ def rename():
 def move():
     payload = request.get_json(silent=True) or {}
     article_id = str(payload.get("id") or "").strip()
-    from_category = str(payload.get("from_category") or "").strip()
     to_category = str(payload.get("to_category") or "").strip()
+    parent_id = str(payload.get("parent_id") or "").strip()
     new_index = payload.get("new_index")
 
     if not article_id or to_category not in ALL_CATEGORIES or new_index is None:
@@ -277,24 +287,35 @@ def move():
         return jsonify(ok=False, error="No current headline workflow"), 409
 
     index = workflow["index"]
-    removed = False
-    search_order = [from_category, *ALL_CATEGORIES]
-    for category in dict.fromkeys(search_order):
-        if category not in index:
-            continue
-        try:
-            index[category].remove(article_id)
-            removed = True
-            break
-        except ValueError:
-            continue
-
-    if not removed:
+    parents = dict(workflow.get("parents") or {})
+    if article_id not in workflow["items"]:
         return jsonify(ok=False, error="Article not found"), 404
 
+    children = [child for ids in index.values() for child in ids if parents.get(child) == article_id]
+    if parent_id:
+        if parent_id not in index[to_category]:
+            return jsonify(ok=False, error="Parent article not found in destination category"), 400
+        if parent_id == article_id or parent_id in parents or children:
+            return jsonify(ok=False, error="Sub-articles can only attach to a main article. Detach existing sub-articles first."), 400
+
+    moving_ids = [article_id, *children]
+    for category in index:
+        index[category] = [item_id for item_id in index[category] if item_id not in moving_ids]
+    parents.pop(article_id, None)
     destination = index.setdefault(to_category, [])
-    destination.insert(max(0, min(new_index, len(destination))), article_id)
+    if parent_id:
+        siblings = [item_id for item_id in destination if parents.get(item_id) == parent_id]
+        position = max(0, min(new_index, len(siblings)))
+        anchor = siblings[position - 1] if position else parent_id
+        insertion_index = destination.index(anchor) + 1
+        parents[article_id] = parent_id
+    else:
+        roots = [item_id for item_id in destination if item_id not in parents]
+        position = max(0, min(new_index, len(roots)))
+        insertion_index = destination.index(roots[position]) if position < len(roots) else len(destination)
+    destination[insertion_index:insertion_index] = moving_ids
     workflow["index"] = index
+    workflow["parents"] = parents
     workflow["built_at"] = datetime.now().isoformat(timespec="seconds")
     session["headline_workflow"] = workflow
     session.modified = True

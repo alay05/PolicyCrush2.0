@@ -1,9 +1,13 @@
 import json
 import os
 import unittest
+from copy import deepcopy
 from unittest.mock import Mock, patch
 
 from app import app
+from bs4 import BeautifulSoup
+from headlines.routes import _workflow_categories
+from mailchimp.renderer import render_main_newsletter, render_main_newsletter_sections
 from headlines.generator import (
     generate_event_headline_records,
     generate_headline_records,
@@ -278,6 +282,126 @@ class HeadlineWorkflowTests(unittest.TestCase):
         with self.client.session_transaction() as current_session:
             self.assertEqual(current_session["saved_articles"], [])
             self.assertNotIn("headline_workflow", current_session)
+
+    def _attach(self):
+        return self.client.post("/headlines/move", json={
+            "id": self.article_two["id"], "parent_id": self.article_one["id"],
+            "to_category": "Medicare", "new_index": 0,
+        })
+
+    def test_attach_preserves_records_and_renders_one_linked_bullet(self):
+        self._generate()
+        with self.client.session_transaction() as current_session:
+            before = deepcopy(current_session["headline_workflow"])
+        self.assertEqual(self._attach().get_json(), {"ok": True})
+        response = self.client.get("/headlines")
+        soup = BeautifulSoup(response.data, "html.parser")
+        parent = soup.select_one(f'.headline-group[data-id="{self.article_one["id"]}"]')
+        self.assertEqual(parent.select_one('.headline-children .article-title').text,
+                         "House Committee Examines Drug Policy")
+        with self.client.session_transaction() as current_session:
+            workflow = current_session["headline_workflow"]
+            self.assertEqual(workflow["items"], before["items"])
+            self.assertEqual(workflow["parents"], {self.article_two["id"]: self.article_one["id"]})
+            categories = _workflow_categories(workflow)
+        html, new_hash = render_main_newsletter(categories)
+        self.assertNotEqual(new_hash, render_main_newsletter(_workflow_categories(before))[1])
+        body = render_main_newsletter_sections(categories)["body"]
+        self.assertIn(body, html)
+        email = BeautifulSoup(body, "html.parser")
+        self.assertEqual(len(email.select('li')), 1)
+        self.assertEqual(email.li.get_text(strip=True), "House Committee Examines Drug Policy")
+        self.assertEqual(email.li.a['href'], self.article_two['url'])
+        self.assertIn('list-style-type:disc', email.ul['style'])
+        self.assertEqual(len(email.select('p')), 1)
+
+    def test_parent_moves_with_children_and_child_can_detach(self):
+        self._generate()
+        self._attach()
+        self.client.post("/headlines/move", json={
+            "id": self.article_one["id"], "to_category": "Health Insurance", "new_index": 0,
+        })
+        self.client.get("/headlines")
+        with self.client.session_transaction() as current_session:
+            workflow = current_session["headline_workflow"]
+            self.assertEqual(workflow['index']['Health Insurance'], [self.article_one['id'], self.article_two['id']])
+            self.assertEqual(workflow['index']['Medicare'], [])
+            self.assertEqual(workflow['parents'][self.article_two['id']], self.article_one['id'])
+        self.client.post("/headlines/move", json={
+            "id": self.article_two["id"], "to_category": "Medicaid", "new_index": 0,
+        })
+        with self.client.session_transaction() as current_session:
+            workflow = current_session["headline_workflow"]
+            self.assertEqual(workflow['parents'], {})
+            self.assertEqual(workflow['index']['Medicaid'], [self.article_two['id']])
+
+    def test_invalid_nesting_does_not_change_workflow(self):
+        self._generate()
+        self._attach()
+        with self.client.session_transaction() as current_session:
+            before = deepcopy(current_session["headline_workflow"])
+        for article, parent in [(self.article_one['id'], self.article_two['id']),
+                                (self.article_one['id'], self.article_one['id']),
+                                (self.article_two['id'], 'missing')]:
+            response = self.client.post('/headlines/move', json={
+                'id': article, 'parent_id': parent, 'to_category': 'Medicare', 'new_index': 0,
+            })
+            self.assertEqual(response.status_code, 400)
+        with self.client.session_transaction() as current_session:
+            self.assertEqual(current_session['headline_workflow'], before)
+
+    def test_removing_parent_promotes_children_and_removing_child_cleans_attachment(self):
+        for remove_parent in (True, False):
+            with self.subTest(remove_parent=remove_parent):
+                self.setUp()
+                self._generate()
+                self._attach()
+                removed = self.article_one if remove_parent else self.article_two
+                remaining = self.article_two if remove_parent else self.article_one
+                self.client.post(f"/saved-articles/{removed['id']}/remove")
+                self.client.get('/headlines')
+                with self.client.session_transaction() as current_session:
+                    workflow = current_session['headline_workflow']
+                    self.assertEqual(workflow['parents'], {})
+                    self.assertEqual(workflow['index']['Medicare'], [remaining['id']])
+
+    def test_new_generation_keeps_attachments_and_subarticle_edits(self):
+        self._generate()
+        self._attach()
+        self.client.post('/headlines/rename', json={'id': self.article_two['id'], 'headline': 'Edited child'})
+        new_article = prepare_article({'title': 'Third', 'url': 'https://example.com/third'}, 'news', 'CMS')
+        with self.client.session_transaction() as current_session:
+            current_session['saved_articles'].append(new_article)
+        with patch('headlines.routes.generate_headline_records', return_value=[{
+            'id': new_article['id'], 'headline': 'New headline', 'category': 'Medicare',
+        }]):
+            self.client.post('/headlines/generate')
+        with self.client.session_transaction() as current_session:
+            workflow = current_session['headline_workflow']
+            self.assertEqual(workflow['parents'], {self.article_two['id']: self.article_one['id']})
+            self.assertEqual(workflow['items'][self.article_two['id']]['headline'], 'Edited child')
+
+    def test_multiple_children_reorder_and_detach_at_root_position(self):
+        self._generate()
+        third = prepare_article({'title': 'Third', 'url': 'https://example.com/third'}, 'news', 'CMS')
+        with self.client.session_transaction() as current_session:
+            current_session['saved_articles'].append(third)
+            workflow = current_session['headline_workflow']
+            workflow['items'][third['id']] = {**third, 'headline': 'Third headline'}
+            workflow['index']['Medicare'].append(third['id'])
+        self._attach()
+        self.client.post('/headlines/move', json={
+            'id': third['id'], 'parent_id': self.article_one['id'], 'to_category': 'Medicare', 'new_index': 0,
+        })
+        with self.client.session_transaction() as current_session:
+            self.assertEqual(current_session['headline_workflow']['index']['Medicare'],
+                             [self.article_one['id'], third['id'], self.article_two['id']])
+        self.client.post('/headlines/move', json={
+            'id': third['id'], 'to_category': 'Medicare', 'new_index': 1,
+        })
+        with self.client.session_transaction() as current_session:
+            self.assertEqual(current_session['headline_workflow']['index']['Medicare'],
+                             [self.article_one['id'], self.article_two['id'], third['id']])
 
     def test_removing_saved_article_prunes_only_its_generated_headline(self):
         self._generate()

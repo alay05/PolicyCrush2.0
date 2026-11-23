@@ -35,9 +35,21 @@ def get_current_workflow(saved_articles: list[dict] | None = None):
         if article_id not in placed:
             index["Quality and Innovation"].append(article_id)
 
-    if items != raw_items or index != raw_index or "source_signature" in workflow:
+    # Keep article records untouched; grouping is separate presentation state.
+    # The flat category index retains every article, including children, so
+    # removing a parent naturally promotes its surviving children in place.
+    raw_parents = workflow.get("parents") or {}
+    categories = {article_id: category for category, ids in index.items() for article_id in ids}
+    parents = {
+        child: parent for child, parent in raw_parents.items()
+        if child in items and parent in items and child != parent
+        and parent not in raw_parents and categories[child] == categories[parent]
+    }
+
+    if items != raw_items or index != raw_index or parents != raw_parents or "source_signature" in workflow:
         workflow["items"] = items
         workflow["index"] = index
+        workflow["parents"] = parents
         workflow.pop("source_signature", None)
         session["headline_workflow"] = workflow
         session.modified = True
@@ -59,6 +71,10 @@ def remove_article_from_workflow(article_id: str) -> None:
         return
 
     items.pop(article_id, None)
+    workflow["parents"] = {
+        child: parent for child, parent in (workflow.get("parents") or {}).items()
+        if child != article_id and parent != article_id
+    }
     for category in list(index):
         index[category] = [item_id for item_id in index[category] if item_id != article_id]
 
