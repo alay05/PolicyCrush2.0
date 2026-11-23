@@ -2,15 +2,37 @@ from collections import OrderedDict
 import unittest
 from unittest.mock import Mock, patch
 
+from bs4 import BeautifulSoup
+
 from app import app
 from config import Config
 from headlines.state import ALL_CATEGORIES
 from mailchimp.client import MailchimpAPIError, MailchimpClient
-from mailchimp.renderer import render_main_newsletter
+from mailchimp.renderer import render_main_newsletter, render_main_newsletter_sections
 from routes.saved_articles import prepare_article
 
 
 class MailchimpRendererTests(unittest.TestCase):
+    def test_template_sections_match_full_newsletter_content(self):
+        categories = {"Medicare": [{
+            "headline": "CMS & HHS Update", "link_text": "Update",
+            "url": "https://example.com/?a=1&b=2",
+        }]}
+        html, _ = render_main_newsletter(categories)
+        soup = BeautifulSoup(html, "html.parser")
+        sections = render_main_newsletter_sections(categories)
+        self.assertEqual(set(sections), {"greeting", "body", "footnote"})
+        for name, content in sections.items():
+            with self.subTest(section=name):
+                self.assertIn(content, html)
+                self.assertEqual(
+                    str(BeautifulSoup(content, "html.parser")),
+                    soup.find(attrs={"mc:edit": name}).decode_contents(),
+                )
+        self.assertIn("CMS &amp; HHS", sections["body"])
+        self.assertNotIn("<html", sections["body"])
+        self.assertIn("[Add quote and attribution in Mailchimp]", sections["footnote"])
+
     def test_render_uses_policycrush_layout_content_links_and_merge_tags(self):
         categories = OrderedDict(
             [
@@ -82,6 +104,11 @@ class MailchimpRendererTests(unittest.TestCase):
 
 
 class MailchimpClientTests(unittest.TestCase):
+    def setUp(self):
+        template_patch = patch.object(Config, "MAILCHIMP_TEMPLATE_ID", "1234")
+        template_patch.start()
+        self.addCleanup(template_patch.stop)
+
     @patch("mailchimp.client.requests.request")
     def test_create_campaign_leaves_campaign_fields_blank(self, request_mock):
         response = Mock(ok=True, content=b"{}")
@@ -99,7 +126,7 @@ class MailchimpClientTests(unittest.TestCase):
                 "Authorization": "Bearer secret-us4",
                 "Content-Type": "application/json",
             },
-            json={"type": "regular"},
+            json={"type": "regular", "content_type": "template", "settings": {"template_id": 1234}},
             timeout=Config.HTTP_TIMEOUT_SECONDS,
         )
 
@@ -107,9 +134,41 @@ class MailchimpClientTests(unittest.TestCase):
         with self.assertRaisesRegex(MailchimpAPIError, "data center suffix"):
             MailchimpClient("invalid-key-")
 
+    def test_template_id_must_be_positive(self):
+        for template_id in ("", "no-id", "0", "-1"):
+            with self.subTest(template_id=template_id):
+                with self.assertRaisesRegex(MailchimpAPIError, "positive template ID"):
+                    MailchimpClient("secret-us4", template_id=template_id)
+
+    @patch("mailchimp.client.requests.request")
+    def test_upload_uses_template_sections_instead_of_raw_html(self, request_mock):
+        response = Mock(ok=True, content=b"{}")
+        response.json.return_value = {}
+        request_mock.return_value = response
+        sections = {"body": "<p>Headline</p>", "greeting": "Hello", "footnote": "Quote"}
+        MailchimpClient("secret-us4").set_campaign_content("campaign-1", sections)
+        self.assertEqual(request_mock.call_args.args, (
+            "PUT", "https://us4.api.mailchimp.com/3.0/campaigns/campaign-1/content",
+        ))
+        self.assertEqual(request_mock.call_args.kwargs["json"], {
+            "template": {"id": 1234, "sections": sections},
+        })
+
+    @patch.object(MailchimpClient, "_request")
+    def test_template_validation_requires_all_editable_regions(self, request_mock):
+        request_mock.return_value = {"sections": {"body": ""}}
+        with self.assertRaisesRegex(MailchimpAPIError, "footnote, greeting"):
+            MailchimpClient("secret-us4").validate_template()
+        request_mock.assert_called_once_with("GET", "/templates/1234/default-content")
+        request_mock.return_value = {"sections": {"body": "", "greeting": "", "footnote": ""}}
+        MailchimpClient("secret-us4").validate_template()
+
 
 class MailchimpWorkflowTests(unittest.TestCase):
     def setUp(self):
+        template_patch = patch.object(Config, "MAILCHIMP_TEMPLATE_ID", "1234")
+        template_patch.start()
+        self.addCleanup(template_patch.stop)
         app.config.update(TESTING=True, SECRET_KEY="test-secret")
         self.client = app.test_client()
         self.article = prepare_article(
@@ -137,7 +196,7 @@ class MailchimpWorkflowTests(unittest.TestCase):
                 "index": index,
             }
 
-    def test_create_draft_uploads_html_stores_state_and_redirects_to_editor(self):
+    def test_create_draft_uploads_sections_stores_state_and_redirects_to_editor(self):
         mailchimp = Mock()
         mailchimp.create_campaign.return_value = {
             "id": "campaign-1",
@@ -158,15 +217,17 @@ class MailchimpWorkflowTests(unittest.TestCase):
             "https://us4.admin.mailchimp.com/campaigns/show/?id=123",
         )
         mailchimp.create_campaign.assert_called_once_with()
+        mailchimp.validate_template.assert_called_once_with()
         mailchimp.set_campaign_content.assert_called_once()
-        campaign_id, html = mailchimp.set_campaign_content.call_args.args
+        campaign_id, sections = mailchimp.set_campaign_content.call_args.args
         self.assertEqual(campaign_id, "campaign-1")
-        self.assertIn(">Announces</a> Medicare Update", html)
-        self.assertIn("*|UNSUB|*", html)
+        self.assertIn(">Announces</a> Medicare Update", sections["body"])
+        self.assertIn("[Add quote and attribution in Mailchimp]", sections["footnote"])
 
         with self.client.session_transaction() as current_session:
             draft = current_session["headline_workflow"]["mailchimp_draft"]
         self.assertEqual(draft["campaign_id"], "campaign-1")
+        self.assertEqual(draft["template_id"], "1234")
         self.assertEqual(len(draft["content_hash"]), 64)
         self.assertFalse(draft["incomplete"])
 
@@ -209,8 +270,80 @@ class MailchimpWorkflowTests(unittest.TestCase):
         update_client.set_campaign_content.assert_called_once()
         self.assertIn(
             "Edited Medicare Headline",
-            update_client.set_campaign_content.call_args.args[1],
+            update_client.set_campaign_content.call_args.args[1]["body"],
         )
+
+    def _seed_existing_draft(self, template_id=None):
+        with self.client.session_transaction() as current_session:
+            workflow = current_session["headline_workflow"]
+            _, content_hash = render_main_newsletter({
+                "Medicare": [workflow["items"][self.article["id"]]],
+            })
+            workflow["mailchimp_draft"] = {
+                "campaign_id": "campaign-1", "content_hash": content_hash,
+                "editor_url": "https://us4.admin.mailchimp.com/campaigns/show/?id=123",
+                "template_id": template_id,
+            }
+            current_session["headline_workflow"] = workflow
+
+    @patch("headlines.routes.MailchimpClient")
+    def test_legacy_html_draft_needs_confirmation_to_become_editable(self, client_class):
+        self._seed_existing_draft()
+        self.assertIn(b"Update Mailchimp Draft", self.client.get("/headlines").data)
+        client = client_class.return_value
+        self.client.post("/headlines/mailchimp")
+        client.set_campaign_content.assert_not_called()
+        client.get_campaign.return_value = {"status": "save"}
+        self.client.post("/headlines/mailchimp", data={"confirm": "1"})
+        client.create_campaign.assert_not_called()
+        client.set_campaign_content.assert_called_once()
+        with self.client.session_transaction() as current_session:
+            self.assertEqual(current_session["headline_workflow"]["mailchimp_draft"]["template_id"], "1234")
+
+    @patch("headlines.routes.MailchimpClient")
+    def test_unchanged_draft_does_not_overwrite_mailchimp_edits(self, client_class):
+        self._seed_existing_draft(template_id="1234")
+        client = client_class.return_value
+        client.get_campaign.return_value = {"status": "save"}
+        response = self.client.post("/headlines/mailchimp")
+        self.assertIn("admin.mailchimp.com", response.location)
+        client.set_campaign_content.assert_not_called()
+
+    @patch("headlines.routes.MailchimpClient")
+    def test_scheduled_campaign_cannot_be_overwritten(self, client_class):
+        self._seed_existing_draft()
+        client = client_class.return_value
+        client.get_campaign.return_value = {"status": "schedule"}
+        self.client.post("/headlines/mailchimp", data={"confirm": "1"})
+        client.set_campaign_content.assert_not_called()
+
+    @patch("headlines.routes.MailchimpClient")
+    def test_invalid_template_does_not_create_empty_campaign(self, client_class):
+        client = client_class.return_value
+        client.validate_template.side_effect = MailchimpAPIError("Missing editable sections")
+        self.client.post("/headlines/mailchimp")
+        client.create_campaign.assert_not_called()
+        client.set_campaign_content.assert_not_called()
+
+    @patch("headlines.routes.MailchimpClient")
+    def test_failed_upload_can_retry_same_draft(self, client_class):
+        client = client_class.return_value
+        client.create_campaign.return_value = {"id": "campaign-1"}
+        client.set_campaign_content.side_effect = MailchimpAPIError("Upload failed")
+        self.client.post("/headlines/mailchimp")
+        with self.client.session_transaction() as current_session:
+            self.assertTrue(current_session["headline_workflow"]["mailchimp_draft"]["incomplete"])
+        client.get_campaign.return_value = {"status": "save"}
+        client.set_campaign_content.side_effect = None
+        self.client.post("/headlines/mailchimp", data={"confirm": "1"})
+        client.create_campaign.assert_called_once()
+        with self.client.session_transaction() as current_session:
+            self.assertFalse(current_session["headline_workflow"]["mailchimp_draft"]["incomplete"])
+
+    def test_missing_template_disables_draft_action(self):
+        with patch.object(Config, "MAILCHIMP_API_KEY", "secret-us4"), patch.object(Config, "MAILCHIMP_TEMPLATE_ID", ""):
+            response = self.client.get("/headlines")
+        self.assertIn(b"Mailchimp Not Configured", response.data)
 
     def test_unconfigured_account_disables_draft_action(self):
         with patch.object(Config, "MAILCHIMP_API_KEY", ""):

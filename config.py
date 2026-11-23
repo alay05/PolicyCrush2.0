@@ -31,6 +31,7 @@ class Config:
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
     HEADLINE_OPENAI_MODEL = os.getenv("HEADLINE_OPENAI_MODEL", "gpt-4o-mini")
     MAILCHIMP_API_KEY = os.getenv("MAILCHIMP_API_KEY", "").strip()
+    MAILCHIMP_TEMPLATE_ID = os.getenv("MAILCHIMP_TEMPLATE_ID", "10001540").strip()
     CONGRESS_API_KEY = os.getenv("CONGRESS_API_KEY", "").strip()
 
     HTTP_TIMEOUT_SECONDS = float(os.getenv("HTTP_TIMEOUT_SECONDS", "30"))

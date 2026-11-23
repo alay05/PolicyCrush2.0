@@ -47,7 +47,7 @@ def _event_time(article: dict) -> str:
     return f"{hour}:{parsed.minute:02d}{parsed.strftime('%p')}"
 
 
-def render_main_newsletter(categories) -> tuple[str, str]:
+def _newsletter_context(categories) -> dict:
     sections = []
     for label, items in categories.items():
         if not items:
@@ -65,5 +65,19 @@ def render_main_newsletter(categories) -> tuple[str, str]:
             }
         )
 
-    html = _environment.get_template("main_newsletter.html").render(sections=sections)
+    return {"sections": sections}
+
+
+def render_main_newsletter(categories) -> tuple[str, str]:
+    html = _environment.get_template("main_newsletter.html").render(**_newsletter_context(categories))
     return html, sha256(html.encode("utf-8")).hexdigest()
+
+
+def render_main_newsletter_sections(categories) -> dict[str, str]:
+    """Render the same content as the full email, without its template shell."""
+    template = _environment.get_template("main_newsletter.html")
+    context = template.new_context(_newsletter_context(categories))
+    return {
+        name: "".join(template.blocks[name](context))
+        for name in ("greeting", "body", "footnote")
+    }

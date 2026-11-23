@@ -7,7 +7,7 @@ from config import Config
 from headlines.generator import HeadlineGenerationError, generate_headline_records
 from headlines.state import ALL_CATEGORIES, get_current_workflow
 from mailchimp.client import MailchimpAPIError, MailchimpClient
-from mailchimp.renderer import render_main_newsletter
+from mailchimp.renderer import render_main_newsletter, render_main_newsletter_sections
 
 
 headlines = Blueprint("headlines", __name__, template_folder="templates")
@@ -29,6 +29,13 @@ def _store_mailchimp_draft(workflow, draft: dict) -> None:
     workflow["mailchimp_draft"] = draft
     session["headline_workflow"] = workflow
     session.modified = True
+
+
+def _mailchimp_draft_stale(draft: dict, content_hash: str) -> bool:
+    return bool(draft) and (
+        draft.get("content_hash") != content_hash
+        or draft.get("template_id") != Config.MAILCHIMP_TEMPLATE_ID
+    )
 
 
 @headlines.post("/generate")
@@ -112,12 +119,9 @@ def review():
         back_url=url_for("saved_articles.saved_articles_view"),
         back_label="← Saved Articles",
         mailchimp_enabled=True,
-        mailchimp_configured=bool(Config.MAILCHIMP_API_KEY),
+        mailchimp_configured=bool(Config.MAILCHIMP_API_KEY and Config.MAILCHIMP_TEMPLATE_ID),
         mailchimp_draft=mailchimp_draft,
-        mailchimp_stale=(
-            bool(mailchimp_draft)
-            and mailchimp_draft.get("content_hash") != content_hash
-        ),
+        mailchimp_stale=_mailchimp_draft_stale(mailchimp_draft, content_hash),
         mailchimp_action_url=url_for("headlines.mailchimp_draft"),
     )
 
@@ -136,7 +140,8 @@ def mailchimp_draft():
         return redirect(url_for("headlines.review"))
 
     categories = _workflow_categories(workflow)
-    html, content_hash = render_main_newsletter(categories)
+    _, content_hash = render_main_newsletter(categories)
+    sections = render_main_newsletter_sections(categories)
     draft = dict(workflow.get("mailchimp_draft") or {})
 
     try:
@@ -152,7 +157,7 @@ def mailchimp_draft():
         return redirect(url_for("headlines.review"))
 
     if campaign_id and not draft.get("unavailable"):
-        if draft.get("content_hash") != content_hash and request.form.get("confirm") != "1":
+        if _mailchimp_draft_stale(draft, content_hash) and request.form.get("confirm") != "1":
             flash("Confirm before overwriting the existing Mailchimp draft.", "error")
             return redirect(url_for("headlines.review"))
         try:
@@ -173,8 +178,16 @@ def mailchimp_draft():
             _store_mailchimp_draft(workflow, draft)
             flash(draft["unavailable_reason"], "error")
             return redirect(url_for("headlines.review"))
+        if not _mailchimp_draft_stale(draft, content_hash) and not draft.get("incomplete"):
+            return redirect(draft.get("editor_url") or url_for("headlines.review"))
+        try:
+            client.validate_template()
+        except MailchimpAPIError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("headlines.review"))
     else:
         try:
+            client.validate_template()
             campaign = client.create_campaign()
         except MailchimpAPIError as exc:
             flash(str(exc), "error")
@@ -196,7 +209,7 @@ def mailchimp_draft():
         _store_mailchimp_draft(workflow, draft)
 
     try:
-        client.set_campaign_content(campaign_id, html)
+        client.set_campaign_content(campaign_id, sections)
     except MailchimpAPIError as exc:
         draft["incomplete"] = True
         _store_mailchimp_draft(workflow, draft)
@@ -205,6 +218,7 @@ def mailchimp_draft():
 
     draft.update(
         content_hash=content_hash,
+        template_id=Config.MAILCHIMP_TEMPLATE_ID,
         incomplete=False,
         unavailable=False,
         updated_at=datetime.now().isoformat(timespec="seconds"),

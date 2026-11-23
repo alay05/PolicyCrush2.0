@@ -261,12 +261,12 @@
           </tbody>
           <tbody mc:hideable>
             <tr class="greeting">
-              <td mc:edit="greeting" colspan="2">
+              <td mc:edit="greeting" colspan="2">{% block greeting %}
                 <h2 style="margin:-6px;">
                   <strong>Your Must-Knows Today Are...</strong>
                 </h2>
                 <!--p&gt;Here are the health policy announcements driving your day...&lt;/p-->
-              </td>
+              {% endblock %}</td>
             </tr>
             <tr class="spacer" style="height:10px;">
               <td colspan="2"></td>
@@ -274,14 +274,14 @@
           </tbody>
           <tbody>
             <tr class="body">
-              <td mc:edit="body" colspan="2">
+              <td mc:edit="body" colspan="2">{% block body %}
                 {% for section in sections %}
                   <h1>{{ section.label }}</h1>
                   {% for article in section["items"] %}
                     <p>{% if article.event_time %}<strong>{{ article.event_time }}</strong> - {% endif %}{{ article.headline_html }}</p>
                   {% endfor %}
                 {% endfor %}
-              </td>
+              {% endblock %}</td>
             </tr>
             <tr class="spacer" style="height:10px;">
               <td></td>
@@ -289,10 +289,10 @@
           </tbody>
           <tbody mc:hideable>
             <tr class="footnote">
-              <td mc:edit="footnote" colspan="2">
+              <td mc:edit="footnote" colspan="2">{% block footnote %}
                 <p>QUOTE OF THE DAY</p>
                 <p>[Add quote and attribution in Mailchimp]</p>
-              </td>
+              {% endblock %}</td>
           </tr>
         </tbody>
         <tbody>

@@ -44,6 +44,7 @@ Before deploying to Vercel:
 - `OPENAI_MODEL`: optional override for the classifier model. Default is `gpt-3.5-turbo` to preserve current behavior.
 - `HEADLINE_OPENAI_MODEL`: optional model used for structured headline generation. Defaults to `gpt-4o-mini`.
 - `MAILCHIMP_API_KEY`: enables Main Newsletter draft creation in Mailchimp. Keep this server-side; the data center is read from the key suffix.
+- `MAILCHIMP_TEMPLATE_ID`: defaults to `10001540`, **PolicyCrush Automation - Editable Layout**, a separate saved copy of the tool's existing newsletter design. Drafts populate its `greeting`, `body`, and `footnote` regions through the template API to retain Mailchimp's visual content editor. This preserves the existing custom template editor, not the new block-based builder. For another Mailchimp account, create a saved template from `templates/mailchimp/main_newsletter.html` (render it with an empty `sections` list first) and override this ID. Keep the saved template and local layout in sync when changing the design. Older HTML-only drafts offer **Update Mailchimp Draft** to convert them after the existing overwrite confirmation.
 - `CONGRESS_API_KEY`: required for Senate and Joint Economic hearing calendars. Get a free key from https://api.congress.gov/sign-up/.
 - `CONGRESS_CACHE_TTL_SECONDS`: optional Congress.gov meeting-cache refresh interval. Defaults to one hour.
 - `CONGRESS_INITIAL_LOOKBACK_DAYS`: update-date lookback used to seed a hearing cache around the requested date. Defaults to `120`; requesting an older date expands the cache backward.
