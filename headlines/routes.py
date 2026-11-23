@@ -6,8 +6,9 @@ from flask import Blueprint, flash, jsonify, redirect, render_template, request,
 from config import Config
 from headlines.generator import HeadlineGenerationError, generate_headline_records
 from headlines.state import ALL_CATEGORIES, get_current_workflow
-from mailchimp.client import MailchimpAPIError, MailchimpClient
+from mailchimp.client import MailchimpClient
 from mailchimp.renderer import render_main_newsletter, render_main_newsletter_sections
+from mailchimp.workflow import create_or_update_draft, mailchimp_draft_stale
 
 
 headlines = Blueprint("headlines", __name__, template_folder="templates")
@@ -30,19 +31,6 @@ def _workflow_categories(workflow) -> OrderedDict:
             ],
         )
         for category in ALL_CATEGORIES
-    )
-
-
-def _store_mailchimp_draft(workflow, draft: dict) -> None:
-    workflow["mailchimp_draft"] = draft
-    session["headline_workflow"] = workflow
-    session.modified = True
-
-
-def _mailchimp_draft_stale(draft: dict, content_hash: str) -> bool:
-    return bool(draft) and (
-        draft.get("content_hash") != content_hash
-        or draft.get("template_id") != Config.MAILCHIMP_TEMPLATE_ID
     )
 
 
@@ -131,7 +119,7 @@ def review():
         mailchimp_enabled=True,
         mailchimp_configured=bool(Config.MAILCHIMP_API_KEY and Config.MAILCHIMP_TEMPLATE_ID),
         mailchimp_draft=mailchimp_draft,
-        mailchimp_stale=_mailchimp_draft_stale(mailchimp_draft, content_hash),
+        mailchimp_stale=mailchimp_draft_stale(mailchimp_draft, content_hash),
         mailchimp_action_url=url_for("headlines.mailchimp_draft"),
     )
 
@@ -152,93 +140,14 @@ def mailchimp_draft():
     categories = _workflow_categories(workflow)
     _, content_hash = render_main_newsletter(categories)
     sections = render_main_newsletter_sections(categories)
-    draft = dict(workflow.get("mailchimp_draft") or {})
-
-    try:
-        client = MailchimpClient()
-    except MailchimpAPIError as exc:
-        flash(str(exc), "error")
-        return redirect(url_for("headlines.review"))
-
-    campaign_id = str(draft.get("campaign_id") or "")
-    create_replacement = request.form.get("create_replacement") == "1"
-    if draft.get("unavailable") and not create_replacement:
-        flash("The previous Mailchimp draft is unavailable. Confirm creation of a replacement.", "error")
-        return redirect(url_for("headlines.review"))
-
-    if campaign_id and not draft.get("unavailable"):
-        if _mailchimp_draft_stale(draft, content_hash) and request.form.get("confirm") != "1":
-            flash("Confirm before overwriting the existing Mailchimp draft.", "error")
-            return redirect(url_for("headlines.review"))
-        try:
-            campaign = client.get_campaign(campaign_id)
-        except MailchimpAPIError as exc:
-            if exc.status_code == 404:
-                draft["unavailable"] = True
-                draft["unavailable_reason"] = "The campaign no longer exists in Mailchimp."
-                _store_mailchimp_draft(workflow, draft)
-                flash(draft["unavailable_reason"], "error")
-                return redirect(url_for("headlines.review"))
-            flash(str(exc), "error")
-            return redirect(url_for("headlines.review"))
-
-        if campaign.get("status") != "save":
-            draft["unavailable"] = True
-            draft["unavailable_reason"] = "The campaign is no longer an editable saved draft."
-            _store_mailchimp_draft(workflow, draft)
-            flash(draft["unavailable_reason"], "error")
-            return redirect(url_for("headlines.review"))
-        if not _mailchimp_draft_stale(draft, content_hash) and not draft.get("incomplete"):
-            return redirect(draft.get("editor_url") or url_for("headlines.review"))
-        try:
-            client.validate_template()
-        except MailchimpAPIError as exc:
-            flash(str(exc), "error")
-            return redirect(url_for("headlines.review"))
-    else:
-        try:
-            client.validate_template()
-            campaign = client.create_campaign()
-        except MailchimpAPIError as exc:
-            flash(str(exc), "error")
-            return redirect(url_for("headlines.review"))
-
-        campaign_id = str(campaign.get("id") or "")
-        if not campaign_id:
-            flash("Mailchimp created a campaign without returning its ID.", "error")
-            return redirect(url_for("headlines.review"))
-        web_id = campaign.get("web_id")
-        draft = {
-            "campaign_id": campaign_id,
-            "web_id": web_id,
-            "editor_url": client.editor_url(web_id) if web_id is not None else "",
-            "content_hash": "",
-            "created_at": datetime.now().isoformat(timespec="seconds"),
-            "incomplete": True,
-        }
-        _store_mailchimp_draft(workflow, draft)
-
-    try:
-        client.set_campaign_content(campaign_id, sections)
-    except MailchimpAPIError as exc:
-        draft["incomplete"] = True
-        _store_mailchimp_draft(workflow, draft)
-        flash(f"The Mailchimp draft was created, but its content could not be uploaded: {exc}", "error")
-        return redirect(url_for("headlines.review"))
-
-    draft.update(
+    return create_or_update_draft(
+        workflow,
+        session_key="headline_workflow",
+        review_endpoint="headlines.review",
         content_hash=content_hash,
-        template_id=Config.MAILCHIMP_TEMPLATE_ID,
-        incomplete=False,
-        unavailable=False,
-        updated_at=datetime.now().isoformat(timespec="seconds"),
+        sections=sections,
+        client_factory=MailchimpClient,
     )
-    draft.pop("unavailable_reason", None)
-    _store_mailchimp_draft(workflow, draft)
-    flash("Mailchimp draft created successfully.", "success")
-    if draft.get("editor_url"):
-        return redirect(draft["editor_url"])
-    return redirect(url_for("headlines.review"))
 
 
 @headlines.post("/rename")

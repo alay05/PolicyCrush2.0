@@ -2,7 +2,7 @@
 
 Active repository for the PolicyCrush Automation Dashboard.
 
-The home page links to Main Newsletter, W2W4, Daily, Senate, House, and AddEvent (Manual). Main Newsletter uses saved articles, headline generation/review, and Mailchimp draft creation; W2W4 uses calendar pulls and event headline generation/review.
+The home page links to Main Newsletter, W2W4, Daily, Senate, House, and AddEvent (Manual). Main Newsletter uses saved articles, headline generation/review, and Mailchimp draft creation; W2W4 uses calendar pulls, event headline generation/review, and the same editable Mailchimp draft flow. Both leave sending details unset. W2W4 formats each event as a bold `M/D - Headline` followed by its local start time (for example, `10:00AM EST`) and an **Add to Calendar** link. Event types such as **Hrg**, **Mtg**, and **Webinar** link to the event details; AddEvent calendar links use `+outlook`, with the app's public ICS endpoint as a fallback. W2W4 supplies its own greeting and hides the shared template's quote area using a stylesheet in the editable footnote section, leaving Main Newsletter's quote area intact.
 
 ## Deployment notes
 
@@ -43,7 +43,7 @@ Before deploying to Vercel:
 - `OPENAI_API_KEY`: enables article suggestion classification, categorization, and headline generation.
 - `OPENAI_MODEL`: optional override for the classifier model. Default is `gpt-3.5-turbo` to preserve current behavior.
 - `HEADLINE_OPENAI_MODEL`: optional model used for structured headline generation. Defaults to `gpt-4o-mini`.
-- `MAILCHIMP_API_KEY`: enables Main Newsletter draft creation in Mailchimp. Keep this server-side; the data center is read from the key suffix.
+- `MAILCHIMP_API_KEY`: enables Main Newsletter and W2W4 draft creation in Mailchimp. Keep this server-side; the data center is read from the key suffix.
 - `MAILCHIMP_TEMPLATE_ID`: defaults to `10001540`, **PolicyCrush Automation - Editable Layout**, a separate saved copy of the tool's existing newsletter design. Drafts populate its `greeting`, `body`, and `footnote` regions through the template API to retain Mailchimp's visual content editor. This preserves the existing custom template editor, not the new block-based builder. For another Mailchimp account, create a saved template from `templates/mailchimp/main_newsletter.html` (render it with an empty `sections` list first) and override this ID. Keep the saved template and local layout in sync when changing the design. Older HTML-only drafts offer **Update Mailchimp Draft** to convert them after the existing overwrite confirmation.
 - `CONGRESS_API_KEY`: required for Senate and Joint Economic hearing calendars. Get a free key from https://api.congress.gov/sign-up/.
 - `CONGRESS_CACHE_TTL_SECONDS`: optional Congress.gov meeting-cache refresh interval. Defaults to one hour.

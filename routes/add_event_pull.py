@@ -5,8 +5,12 @@ from datetime import datetime, date
 from io import BytesIO
 
 from flask import Blueprint, render_template, request, send_file, url_for, redirect, abort, session, jsonify, flash
+from config import Config
 from features.categorize import categorize_article, CATEGORIES
 from headlines.generator import HeadlineGenerationError, generate_event_headline_records
+from mailchimp.client import MailchimpClient
+from mailchimp.renderer import render_w2w4_newsletter, render_w2w4_newsletter_sections
+from mailchimp.workflow import create_or_update_draft, mailchimp_draft_stale
 from collections import OrderedDict
 import hashlib, json
 
@@ -71,7 +75,7 @@ def _current_event_headline_workflow(events: list[dict] | None = None):
     if not event_by_id or not isinstance(raw_items, dict) or not isinstance(raw_index, dict):
         return None
 
-    compared_fields = ("title", "url", "date", "date_label", "time_label", "location")
+    compared_fields = ("title", "url", "addevent_url", "date", "date_label", "time_label", "location")
     items = {
         event_id: item
         for event_id, item in raw_items.items()
@@ -99,6 +103,19 @@ def _current_event_headline_workflow(events: list[dict] | None = None):
         session["addevent_categories_cache"] = cache
         session.modified = True
     return cache
+
+
+def _event_workflow_categories(workflow) -> OrderedDict:
+    items = workflow["items"]
+    return OrderedDict(
+        (category, [
+            {**items[event_id], "calendar_url": items[event_id].get("addevent_url") or url_for(
+                "add_event_pull.add_event_pull_event_ics", event_id=event_id, _external=True,
+            )}
+            for event_id in workflow["index"].get(category, []) if event_id in items
+        ])
+        for category in CATEGORIES
+    )
 
 
 def _event_headline_status(events: list[dict]) -> tuple[int, int]:
@@ -210,7 +227,7 @@ def add_event_pull_event_ics(event_id: str):
 def _event_minimal(ev: dict) -> dict:
     """Normalize an AddEvent record into the minimal shape used for categorizing."""
     title = (ev.get("title") or "")[:240]  # trim to keep cookie small
-    url   = (ev.get("original_link") or ev.get("addevent_url") or "")[:300]
+    url   = ev.get("original_link") or ev.get("addevent_url") or ""
     date_only = ev.get("date_text") or ""
     date_str = date_only
     time_str = ev.get("time_text") or ""
@@ -226,6 +243,7 @@ def _event_minimal(ev: dict) -> dict:
         "id": ev.get("id"),
         "title": title,
         "url": url,
+        "addevent_url": ev.get("addevent_url") or "",
         "date": (date_str or "")[:40],
         "date_label": date_label,
         "time_label": time_label[:80],
@@ -278,13 +296,16 @@ def add_event_pull_generate_headlines():
         }
         index[result["category"]].append(event_id)
 
-    session["addevent_categories_cache"] = {
+    next_workflow = {
         "built_at": datetime.now().isoformat(timespec="seconds"),
         "sig": _event_signature(events),
         "count": len(events),
         "items": items,
         "index": index,
     }
+    if workflow and workflow.get("mailchimp_draft"):
+        next_workflow["mailchimp_draft"] = workflow["mailchimp_draft"]
+    session["addevent_categories_cache"] = next_workflow
     session["addevent_categorize_ready"] = True
     session.modified = True
     return redirect(url_for("add_event_pull.add_event_categories_review"))
@@ -361,13 +382,9 @@ def add_event_categories_review():
         items = workflow["items"]
         event_ids = {str(event.get("id")) for event in events}
         pending_count = len(event_ids - set(items))
-        categories = OrderedDict(
-            (
-                category,
-                [items[event_id] for event_id in workflow["index"].get(category, []) if event_id in items],
-            )
-            for category in CATEGORIES
-        )
+        categories = _event_workflow_categories(workflow)
+        _, content_hash = render_w2w4_newsletter(categories)
+        draft = workflow.get("mailchimp_draft") or {}
         return render_template(
             "headlines/review.html",
             categories=categories,
@@ -379,6 +396,11 @@ def add_event_categories_review():
             generate_url=url_for("add_event_pull.add_event_pull_generate_headlines"),
             back_url=url_for("add_event_pull.add_event_pull_home"),
             back_label="← W2W4",
+            mailchimp_enabled=True,
+            mailchimp_configured=bool(Config.MAILCHIMP_API_KEY and Config.MAILCHIMP_TEMPLATE_ID),
+            mailchimp_draft=draft,
+            mailchimp_stale=mailchimp_draft_stale(draft, content_hash),
+            mailchimp_action_url=url_for("add_event_pull.add_event_pull_mailchimp_draft"),
         )
 
     index = cache.get("index") or {}
@@ -406,6 +428,30 @@ def add_event_categories_review():
         "add_event_categories.html",
         categories=ordered,
         built_at=cache.get("built_at"),
+    )
+
+
+@add_event_pull.post("/add-event-pull/mailchimp")
+def add_event_pull_mailchimp_draft():
+    events = list(session.get("addevent_pulled") or [])
+    workflow = _current_event_headline_workflow(events)
+    if not workflow:
+        flash("Generate event headlines before creating a Mailchimp draft.", "info")
+        return redirect(url_for("add_event_pull.add_event_pull_home"))
+
+    if {str(event.get("id")) for event in events} - set(workflow["items"]):
+        flash("Generate all pending headlines before creating a Mailchimp draft.", "error")
+        return redirect(url_for("add_event_pull.add_event_categories_review"))
+
+    categories = _event_workflow_categories(workflow)
+    _, content_hash = render_w2w4_newsletter(categories)
+    return create_or_update_draft(
+        workflow,
+        session_key="addevent_categories_cache",
+        review_endpoint="add_event_pull.add_event_categories_review",
+        content_hash=content_hash,
+        sections=render_w2w4_newsletter_sections(categories),
+        client_factory=MailchimpClient,
     )
 
 
