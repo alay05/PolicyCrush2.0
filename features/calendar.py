@@ -2,7 +2,7 @@
 import os
 import re
 from datetime import datetime, timedelta
-from html import unescape
+from html import escape, unescape
 from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfo
 
@@ -170,6 +170,10 @@ def create_event_addevent(data, *, dedupe=True, dedupe_window_hours=3, calendar_
                     params["page"] += 1
             except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
                 raise EventImportError("Could not check AddEvent for duplicates. Nothing was added; please try again.") from exc
+        # AddEvent's rich-text description needs an explicit anchor to be clickable.
+        # Keep the plain source in data for duplicate matching.
+        source = escape(data["description"], quote=True)
+        payload["description"] = f'<a href="{source}">{source}</a>'
         try:
             response = session.post(f"{API_BASE}/events", json=payload, timeout=20)
             response.raise_for_status()

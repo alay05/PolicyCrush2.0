@@ -22,6 +22,7 @@ import os
 import re
 import typing as t
 from datetime import datetime, date, timedelta, timezone, time as dtime
+from html import unescape
 
 import requests
 
@@ -136,12 +137,12 @@ def _utc_bounds(start: date, end: date) -> tuple[datetime, datetime]:
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 
 
-_URL_RE = re.compile(r"https?://[^\s)>\]]+", re.IGNORECASE)
+_URL_RE = re.compile(r"https?://[^\s<>\"')\]]+", re.IGNORECASE)
 def _extract_first_url(text: str | None) -> str | None:
     if not text:
         return None
     m = _URL_RE.search(text)
-    return m.group(0) if m else None
+    return unescape(m.group(0)) if m else None
 
 
 # ---- Calendar lookups --------------------------------------------------------

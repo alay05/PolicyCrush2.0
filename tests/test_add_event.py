@@ -5,10 +5,11 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import requests
+from bs4 import BeautifulSoup
 from flask import Flask
 
 from features.calendar import EventImportError, _parse_dt_minute, create_event_addevent, event_from_url
-from features.calendar_pull import resolve_calendar_id
+from features.calendar_pull import _shape_event, resolve_calendar_id
 from routes.add_event import add_event
 
 SAMPLES = json.loads((Path(__file__).parent / 'fixtures/add_event_sources.json').read_text())
@@ -89,11 +90,34 @@ class AddEventWriteTests(unittest.TestCase):
         with patch.dict('os.environ', {'ADDEVENT_CALENDAR_ID': ''}), patch('features.calendar.resolve_calendar_id', return_value='target'):
             saved = create_event_addevent(EVENT)
         self.assertFalse(saved['deduped'])
-        self.assertEqual(self.session.post.call_args.kwargs['json'], {**EVENT, 'calendar_id': 'target'})
+        self.assertEqual(self.session.post.call_args.kwargs['json'], {
+            **EVENT, 'calendar_id': 'target',
+            'description': f'<a href="{SENATE_URL}">{SENATE_URL}</a>',
+        })
         params = self.session.get.call_args.kwargs['params']
         self.assertEqual(params['calendar_ids'], 'target')
         self.assertEqual(params['datetime_min'], '2026-11-18 08:00:00')
         self.assertNotIn('starts_after', params)
+
+    def test_clickable_source_survives_calendar_pull_and_duplicate_detection(self):
+        for source in (SENATE_URL, HOUSE_URL):
+            with self.subTest(source=source):
+                event = {**EVENT, 'description': source}
+                self.session.get.return_value = response({'events': []})
+                self.session.post.return_value = response({'id': 'new'})
+                create_event_addevent(event, calendar_id='target')
+                payload = self.session.post.call_args.kwargs['json']
+                anchor = BeautifulSoup(payload['description'], 'html.parser').find('a')
+                self.assertIsNotNone(anchor)
+                self.assertEqual(anchor['href'], source)
+                self.assertEqual(anchor.get_text(), source)
+                self.assertEqual(_shape_event(payload)['original_link'], source)
+                self.assertEqual(event['description'], source)
+
+                self.session.post.reset_mock()
+                self.session.get.return_value = response({'events': [{**payload, 'id': 'existing'}]})
+                self.assertTrue(create_event_addevent(event, calendar_id='target')['deduped'])
+                self.session.post.assert_not_called()
 
     def test_duplicate_on_later_page_with_uppercase_congress_is_reused(self):
         existing = {**EVENT, 'id': 'existing', 'calendar_id': 'target', 'datetime_start': '2026-11-18 11:00:00', 'description': SENATE_URL.replace('congress/senate', 'Congress/senate')}

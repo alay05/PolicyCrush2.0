@@ -11,6 +11,18 @@ from routes.add_event_pull import _event_minimal, _event_when_parts
 
 
 class CalendarPullEventTimeTests(unittest.TestCase):
+    def test_source_links_from_plain_and_html_descriptions(self):
+        url = 'https://docs.house.gov/Committee/Calendar/ByEvent.aspx?EventID=119594&view=full'
+        encoded = url.replace('&', '&amp;')
+        for description in (
+            url,
+            f'<a href="{encoded}">Event details</a>',
+            f"<a href='{encoded}'>Event details</a>",
+            f'<p>{encoded}</p>',
+        ):
+            with self.subTest(description=description):
+                self.assertEqual(calendar_pull._extract_first_url(description), url)
+
     def setUp(self):
         self.original_local_tz = calendar_pull.LOCAL_TZ
         calendar_pull.LOCAL_TZ = ZoneInfo("America/New_York")
